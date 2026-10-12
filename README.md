@@ -223,8 +223,12 @@ CSP 为 `script-src 'self'; object-src 'self'`，不使用 `eval` / `new Functio
 3. 任务书同时要求「控制依赖数量」「不得运行时依赖 CDN」。自建轻量组件
    （弹窗、确认框、提示、图标）约 600 行，零运行时依赖、完全离线、便于维护。
 
-因此运行时依赖只有 `vue` 与 `sortablejs` 两项。若后续确实需要组件库，
-本项目的 store / service 分层与组件库无关，可以直接替换视图层。
+后来为改善设置面板观感，引入了 **Naive UI**（`naive-ui@2.45`）并渐进式迁移：
+Naive UI 无独立 CSS 文件（运行时 CSS-in-JS 注入，无任何远程资源请求，兼容 MV3 CSP），
+品牌色/圆角/字体经 `useNaiveTheme.ts` 对齐到项目的 CSS 变量体系。
+目前已迁移**设置面板**（NModal + NTabs 分组），其余自建组件按需逐步迁移；
+运行时依赖为 `vue`、`sortablejs`、`naive-ui` 三项。store / service 分层与组件库无关，
+视图层可继续替换。
 
 ### 4.2 目录结构
 
@@ -335,7 +339,7 @@ RecentVisit    { id, websiteId, name, url, icon, iconType, pageId, sectionId, vi
 | 检查项 | 命令 | 结果 |
 | --- | --- | --- |
 | TypeScript 类型检查 | `npm run type-check` | ✅ 通过，0 错误（`strict` + `noUnusedLocals`） |
-| 生产构建 | `npm run build:only` | ✅ 通过，产出 `dist/`（JS 约 268 KB / gzip 94 KB，CSS 44.5 KB） |
+| 生产构建 | `npm run build:only` | ✅ 通过，产出 `dist/`（JS 约 757 KB / gzip 228 KB，CSS 43.5 KB；含 Naive UI 设置面板） |
 | 构建产物自检 | `npm run verify` | ✅ **20/20 项通过** |
 | 旧格式兼容性回归 | `npm run legacy` | ✅ **21/21 项通过** |
 | 不可解析数据保护 | `npm run corrupt` | ✅ **18/18 项通过** |

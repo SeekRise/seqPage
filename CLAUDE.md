@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目概述
 
-My Navi — Chrome 新标签页个人导航工作台扩展。技术栈：**Manifest V3 + Vue 3（`<script setup>` + Composition API）+ TypeScript（strict）+ Vite 7 + SortableJS**。本地优先：数据全部存 `chrome.storage.local`，零后端、零 CDN、运行时依赖仅 `vue` 和 `sortablejs`。
+My Navi — Chrome 新标签页个人导航工作台扩展。技术栈：**Manifest V3 + Vue 3（`<script setup>` + Composition API）+ TypeScript（strict）+ Vite 7 + SortableJS + Naive UI**。本地优先：数据全部存 `chrome.storage.local`，零后端、零 CDN、运行时依赖为 `vue`、`sortablejs`、`naive-ui`（CSS-in-JS 运行时注入样式，无外部 CSS/资源请求，兼容 MV3 CSP）。
 
 ## 常用命令
 
@@ -66,9 +66,10 @@ services/storage.ts      chrome.storage.local 封装（localStorage 回退）
 
 ### 有意不用的东西（改之前先了解原因）
 
-- **不用组件库**（如 TDesign）：其 svg-sprite 依赖远程脚本，被 MV3 CSP 拦截；本项目自建弹窗/确认框/右键菜单/图标等轻量组件（约 600 行，零运行时依赖）。
+- **组件库用 Naive UI，仅渐进式接入**：设置面板已迁移（`SettingsPanel.vue` + `App.vue` 根部的 `NConfigProvider`，主题桥接在 `src/composables/useNaiveTheme.ts`）；其余组件（AppModal、ConfirmDialog、Toast 等）仍是自建轻量组件，后续按需迁移。**禁止引入依赖远程资源的组件库**（如 TDesign 的 svg-sprite 走 CDN 脚本，会被 MV3 CSP 拦截）。
 - **不用 Pinia**：`store.ts` 是手写的轻量状态中心。
 - **不用跨分区拖拽**：跨分区移动走「移动到其它分区」菜单（对触屏更友好，属已确认的取舍）。
+- **测试定位用 data-testid**：`SettingsPanel` 的关键控件带 `setting-{组}-{值}` 形式的 testid，测试脚本依赖它而非 Naive UI 内部 class（唯一例外：四分组数量断言用 `.n-tabs-tab`）。迁移其他组件时沿用此约定。
 
 ## 其他注意事项
 
