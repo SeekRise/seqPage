@@ -234,10 +234,10 @@ const probe = await evaluate(`(() => {
   };
 })()`);
 
-check('页面标题正确', probe.title, (v) => String(v).includes('My Navi'));
+check('页面标题正确', probe.title, (v) => String(v).includes('SeqPage'));
 check('应用根节点已挂载', probe.hasApp);
 check('首屏加载态已结束', !probe.loading);
-check('已写入演示数据：导航页面（右侧栏）', probe.sidebarItems, (v) => v >= 4);
+check('已写入演示数据：导航页面', probe.sidebarItems, (v) => v >= 4);
 check('已写入演示数据：分区', probe.sections, (v) => v >= 3);
 check('已写入演示数据：网站卡片', probe.cards, (v) => v >= 8);
 check('当前页面高亮已生效', probe.activePage, (v) => v === '工作台');
@@ -284,15 +284,65 @@ await new Promise((r) => setTimeout(r, 400));
 
 const settingsPanel = await evaluate(`(() => {
   const modal = document.querySelector('[data-testid="settings-modal"]');
-  const radios = modal ? [...modal.querySelectorAll('[data-testid^="setting-theme-"]')].map((el) => el.textContent.trim()) : [];
+  // 主题控件是纯图标按钮（文字只在 title / aria-label 里），因此按 testid 定位而非按钮文案
+  const themeOptions = ['light', 'dark', 'system'].filter(
+    (mode) => modal?.querySelector('[data-testid="setting-theme-' + mode + '"]'),
+  );
   const tabs = modal ? [...modal.querySelectorAll('.n-tabs-tab')].map((el) => el.textContent.trim()) : [];
-  return { hasModal: !!modal, radios, tabs };
+  return { hasModal: !!modal, themeOptions, tabs };
 })()`);
 check('设置面板可打开', settingsPanel.hasModal);
-check('包含主题模式选项（浅色/深色/跟随系统）', settingsPanel.radios, (v) =>
-  ['浅色', '深色', '跟随系统'].every((label) => v.some((item) => item.includes(label))),
-);
+check('包含主题模式选项（浅色/深色/跟随系统，纯图标）', settingsPanel.themeOptions, (v) => v.length === 3);
 check('包含四个设置分组', settingsPanel.tabs, (v) => v.length === 4);
+
+// 交互：上传本地背景图，覆盖 createImageBitmap → canvas → WebP data URL 的完整链路
+const bgUpload = await evaluate(`(async () => {
+  const modal = document.querySelector('[data-testid="settings-modal"]');
+  const bgTab = [...(modal?.querySelectorAll('.n-tabs-tab') ?? [])].find((el) => el.textContent.trim() === '背景与样式');
+  bgTab?.click();
+  await new Promise((r) => setTimeout(r, 300));
+
+  modal?.querySelector('[data-testid="setting-bgtype-image"]')?.click();
+  await new Promise((r) => setTimeout(r, 300));
+
+  const canvas = document.createElement('canvas');
+  canvas.width = 96;
+  canvas.height = 64;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#123456';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+
+  const input = document.querySelector('input[type="file"][aria-label="选择背景图片文件"]');
+  if (!input || !blob) return { error: '找不到上传入口' };
+  const transfer = new DataTransfer();
+  transfer.items.add(new File([blob], 'bg.png', { type: 'image/png' }));
+  input.files = transfer.files;
+  input.dispatchEvent(new Event('change', { bubbles: true }));
+
+  await new Promise((r) => setTimeout(r, 1500));
+  const state = JSON.parse(localStorage.getItem('mynavi:state') ?? '{}');
+  const bg = state.settings?.background ?? {};
+  return {
+    uploaded: typeof bg.imageUrl === 'string' && bg.imageUrl.startsWith('data:image/webp'),
+    type: bg.type,
+    hasPreview: Boolean(modal?.querySelector('.setting-bg-preview img')),
+    varApplied: getComputedStyle(document.documentElement).getPropertyValue('--bg-page-image').includes('data:image/webp'),
+  };
+})()`);
+check('可以上传本地背景图（压缩为 WebP data URL）', bgUpload.uploaded === true);
+check('上传后背景类型切到「图片」', bgUpload.type, (v) => v === 'image');
+check('上传后显示缩略图预览', bgUpload.hasPreview === true);
+check('上传后背景图已应用到 CSS 变量', bgUpload.varApplied === true);
+
+// 清理：移除背景图，避免污染后面「刷新后…」的持久化断言
+const bgCleared = await evaluate(`(async () => {
+  document.querySelector('[data-testid="setting-bgimage-clear"]')?.click();
+  await new Promise((r) => setTimeout(r, 700));
+  const state = JSON.parse(localStorage.getItem('mynavi:state') ?? '{}');
+  return state.settings?.background?.imageUrl ?? null;
+})()`);
+check('移除背景图后存储中不再保留图片数据', bgCleared, (v) => v === '');
 
 // 关闭设置面板
 await evaluate(`(() => {
@@ -433,8 +483,11 @@ const readSidebarSide = () => evaluate(`(() => {
 })()`);
 
 const sidebarDefault = await readSidebarSide();
-check('导航栏默认位于右侧', sidebarDefault?.side, (v) => v === 'right');
+// 设计已改为默认左侧栏（参考图方向），因此这里断言 left。
+// 注意：改的是期望值本身，不是放宽条件——右侧布局仍由下面的切换用例覆盖。
+check('导航栏默认位于左侧', sidebarDefault?.side, (v) => v === 'left');
 check('默认布局下侧边栏有可见尺寸', sidebarDefault?.sidebarVisible === true);
+check('默认布局下根节点标记为 left', sidebarDefault?.attr, (v) => v === 'left');
 
 // 打开设置 → 外观分组，切换到「左侧」
 const sidebarLeft = await evaluate(`(async () => {
@@ -442,8 +495,10 @@ const sidebarLeft = await evaluate(`(async () => {
   buttons.find((el) => el.textContent.trim() === '设置')?.click();
   await new Promise((r) => setTimeout(r, 450));
   const modal = document.querySelector('[data-testid="settings-modal"]');
-  const positionRadios = [...(modal?.querySelectorAll('[data-testid^="setting-sidebar-"]') ?? [])]
-    .filter((el) => ['左侧', '右侧'].includes(el.textContent.trim()));
+  // 同样是纯图标按钮，按 testid 定位
+  const positionRadios = ['left', 'right'].filter(
+    (side) => modal?.querySelector('[data-testid="setting-sidebar-' + side + '"]'),
+  );
   const leftRadio = modal?.querySelector('[data-testid="setting-sidebar-left"]');
   leftRadio?.click();
   await new Promise((r) => setTimeout(r, 550));
@@ -532,7 +587,7 @@ const afterReload = await evaluate(`(() => {
 })()`);
 
 check('测试环境已切换到 localStorage 回退路径', afterReload.storageShimmed === true);
-check('刷新后 localStorage 中仍有 My Navi 配置', afterReload.storageKeys, (v) =>
+check('刷新后 localStorage 中仍有 SeqPage 配置', afterReload.storageKeys, (v) =>
   v.includes('mynavi:state'),
 );
 
@@ -559,9 +614,57 @@ check('刷新后导航栏位置设置被保留', afterReload.storedSidebarPositi
 check('刷新后根节点仍标记为 right', afterReload.sidebarAttr, (v) => v === 'right');
 check('刷新后导航栏仍渲染在右侧', afterReload.sidebarIsRight === true);
 
+// 交互：侧栏页面右键新建分区（跨页会先切过去），并受「每页最多 4 个分区」限制
+const sectionCreation = await evaluate(`(async () => {
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  const openPageMenu = async (pageName) => {
+    const link = [...document.querySelectorAll('.sidebar__link')].find((el) => el.textContent.includes(pageName));
+    if (!link) return null;
+    const rect = link.getBoundingClientRect();
+    link.dispatchEvent(new MouseEvent('contextmenu', {
+      bubbles: true, cancelable: true, clientX: rect.left + 20, clientY: rect.top + 10,
+    }));
+    await wait(400);
+    return [...document.querySelectorAll('.context-menu__item')];
+  };
+
+  // 演示数据里「安全运营」有 4 个分区，已达上限 → 入口应被禁用
+  const fullItems = (await openPageMenu('安全运营')) ?? [];
+  const blockedItem = fullItems.find((el) => el.textContent.includes('新建分区'));
+  const blocked = blockedItem ? blockedItem.className.includes('disabled') : null;
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  await wait(300);
+
+  // 「工作台」只有 3 个分区：入口可用，点它应切到该页并弹出「新增分区」
+  const items = (await openPageMenu('工作台')) ?? [];
+  const item = items.find((el) => el.textContent.includes('新建分区'));
+  const enabled = item ? !item.className.includes('disabled') : false;
+  item?.click();
+  await wait(900);
+
+  const heading = document.querySelector('.app__page-title h1')?.textContent?.trim() ?? '';
+  const dialog = [...document.querySelectorAll('dialog')].find((d) => d.open);
+  const dialogTitle = dialog?.querySelector('h2')?.textContent?.trim() ?? '';
+  [...(dialog?.querySelectorAll('button') ?? [])].find((b) => b.textContent.trim() === '取消')?.click();
+  await wait(400);
+
+  return {
+    blocked,
+    enabled,
+    heading,
+    dialogTitle,
+    closed: ![...document.querySelectorAll('dialog')].some((d) => d.open),
+  };
+})()`);
+check('满 4 个分区的页面：右键「新建分区」被禁用', sectionCreation.blocked === true);
+check('未满 4 个分区的页面：右键「新建分区」可用', sectionCreation.enabled === true);
+check('跨页新建分区会先切到目标页面', sectionCreation.heading, (v) => v === '工作台');
+check('右键新建分区打开的是「新增分区」表单', sectionCreation.dialogTitle, (v) => v === '新增分区');
+check('取消后表单关闭且未创建分区', sectionCreation.closed === true);
+
 /* ---------------- 输出 ---------------- */
 
-console.log('\n=== My Navi 运行时冒烟测试（headless Chrome） ===\n');
+console.log('\n=== SeqPage 运行时冒烟测试（headless Chrome） ===\n');
 for (const item of checks) {
   console.log(`  ${item.pass ? '✓' : '✗'} ${item.label}${item.detail ? ` — ${item.detail}` : ''}`);
 }

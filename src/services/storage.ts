@@ -418,7 +418,7 @@ export async function writeSnapshot(
   return writeRaw(STATE_KEY, document);
 }
 
-/** 清空全部 My Navi 数据（含搜索历史） */
+/** 清空全部 SeqPage 数据（含搜索历史） */
 export function clearAll(): Promise<StorageResult<true>> {
   return removeRaw([STATE_KEY, SEARCH_HISTORY_KEY]);
 }

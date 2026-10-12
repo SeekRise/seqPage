@@ -1,8 +1,8 @@
 {
-  "name": "my-navi",
+  "name": "seqpage",
   "version": "1.0.0",
   "private": true,
-  "description": "My Navi - Chrome 新标签页个人导航工作台（Manifest V3 + Vue 3 + TypeScript + Vite）",
+  "description": "SeqPage - Chrome 新标签页个人导航工作台（Manifest V3 + Vue 3 + TypeScript + Vite）",
   "type": "module",
   "scripts": {
     "dev": "vite",

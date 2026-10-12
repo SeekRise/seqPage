@@ -1,5 +1,5 @@
 /**
- * My Navi 数据模型定义
+ * SeqPage 数据模型定义
  *
  * 设计原则：
  * - 所有实体使用稳定唯一 ID（时间戳 + 随机串），绝不用数组下标当业务 ID。
@@ -8,8 +8,13 @@
  * - 通过 schemaVersion 管理配置版本，便于未来迁移。
  */
 
-/** 当前配置结构版本。修改数据结构时同步 +1 并在 storage 中补充迁移逻辑。 */
-export const SCHEMA_VERSION = 1;
+/**
+ * 当前配置结构版本。修改数据结构时同步 +1 并在 storage 中补充迁移逻辑。
+ *
+ * v2：新增 sidebarVisible / showClock 两个界面开关（纯增量，不做数据变换）。
+ * v3：新增 sidebarAutoHide 界面开关（纯增量，不做数据变换）。
+ */
+export const SCHEMA_VERSION = 3;
 
 /** 主题模式 */
 export type ThemeMode = 'light' | 'dark' | 'system';
@@ -98,7 +103,18 @@ export interface AppSettings {
   cardDensity: CardDensity;
   /** 侧边导航栏显示在左侧还是右侧 */
   sidebarPosition: SidebarPosition;
+  /**
+   * @deprecated 已不再消费：侧边栏只有「常驻」与「自动隐藏」两种形态，
+   * 不存在彻底隐藏（隐藏后设置入口随侧栏一起消失，会形成无法恢复的死锁）。
+   * 字段保留是为了兼容历史数据，新代码请勿读取。
+   */
+  sidebarVisible: boolean;
+  /** 自动隐藏侧边栏：鼠标靠近屏幕对应边缘时悬浮呼出，移开收回；关闭则常驻显示 */
+  sidebarAutoHide: boolean;
+  /** @deprecated 时钟组件已移除，字段仅为兼容历史数据保留 */
+  showClock: boolean;
   background: BackgroundConfig;
+  /** @deprecated 最近访问功能已移除，字段仅为兼容历史数据保留 */
   recentVisitsEnabled: boolean;
   searchHistoryEnabled: boolean;
   /** 是否启用卡片/分区/页面的右键菜单 */
@@ -107,7 +123,7 @@ export interface AppSettings {
   shortcutsEnabled: boolean;
   /** 是否为网站卡片请求远程 favicon（关闭后完全离线） */
   remoteFavicon: boolean;
-  /** 最近访问记录保留条数上限 */
+  /** @deprecated 最近访问功能已移除，字段仅为兼容历史数据保留 */
   recentVisitsLimit: number;
 }
 
@@ -179,8 +195,10 @@ export interface SearchEngine {
   urlTemplate: string;
   /** 关键词快捷前缀，如 gh 对应 Github */
   keyword?: string;
-  /** 图标字符（emoji），避免依赖远程图标资源 */
+  /** 图标名（utils/icons.ts 的内置品牌图标，本地打包不依赖远程资源） */
   icon: string;
+  /** 品牌色；不提供时继承文字颜色（适合黑白标志，深浅主题都可见） */
+  color?: string;
 }
 
 /** 通用上下文菜单项 */

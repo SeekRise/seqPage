@@ -328,7 +328,7 @@ check('第二个页面的网站隔离正确', switched.cards, (v) => v.length ==
 
 /* ---------------- 输出 ---------------- */
 
-console.log('\n=== My Navi 旧格式兼容性回归测试 ===\n');
+console.log('\n=== SeqPage 旧格式兼容性回归测试 ===\n');
 for (const item of checks) {
   console.log(`  ${item.pass ? '✓' : '✗'} ${item.label}${item.detail ? ` — ${item.detail}` : ''}`);
 }

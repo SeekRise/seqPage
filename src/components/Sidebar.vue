@@ -2,7 +2,8 @@
 /**
  * 侧边导航栏
  *
- * 展示所有导航页面，并提供新建、重命名（行内）、调整顺序（拖拽）、删除、页面管理等入口。
+ * 展示所有导航页面，并提供行内重命名、拖拽排序，以及每项的「页面操作」菜单
+ * （新建 / 重命名 / 上下移 / 删除）。
  * 位置可由用户在设置中切换左侧 / 右侧（任务书 4.2 的导航栏 + 第十节的可配置布局）。
  *
  * 契约：
@@ -22,21 +23,16 @@ const props = defineProps<{
   activePageId: string;
   sectionCounts: Record<string, number>;
   websiteCounts: Record<string, number>;
-  /** 侧边栏是否处于收起状态 */
-  collapsed: boolean;
-  /** 侧边栏位于左侧还是右侧：影响分隔线方向与折叠箭头的指向 */
+  /** 侧边栏位于左侧还是右侧：影响分隔线画在哪一侧 */
   position: SidebarPosition;
 }>();
 
 const emit = defineEmits<{
   select: [pageId: string];
-  'create-page': [];
   rename: [payload: { page: NavigationPage; name: string }];
   'edit-page': [page: NavigationPage];
   'remove-page': [page: NavigationPage];
-  'manage-pages': [];
   'open-settings': [];
-  'toggle-collapse': [];
   'context-menu': [payload: { page: NavigationPage; event: MouseEvent }];
   'open-actions-menu': [payload: { page: NavigationPage; event: MouseEvent }];
   reorder: [orderedIds: string[]];
@@ -45,6 +41,13 @@ const emit = defineEmits<{
 const editingId = ref('');
 const draftName = ref('');
 const listRef = ref<HTMLElement | null>(null);
+
+/**
+ * 品牌标识。写成字符串常量而不是模板里的字面量 src：
+ * Vite 会把模板中的相对路径当资源引用去组件目录里找文件（这里并不存在），
+ * 而 public/icons 是原样拷贝进 dist 的，只能按「相对当前页面」的 URL 引用。
+ */
+const brandIconUrl = './icons/icon128.png';
 
 /** 行内重命名的输入框（用回调 ref 获取，避免 v-for 中出现 ref 数组） */
 let editInputEl: HTMLInputElement | null = null;
@@ -92,52 +95,19 @@ function onContextMenu(page: NavigationPage, event: MouseEvent): void {
 </script>
 
 <template>
-  <aside
-    class="sidebar"
-    :class="[`sidebar--${position}`, { 'sidebar--collapsed': collapsed }]"
-    aria-label="导航页面列表"
-  >
+  <aside id="app-sidebar" class="sidebar" :class="`sidebar--${position}`" aria-label="导航页面列表">
+    <!-- 品牌行：顶栏已移除，固定 56px（原与顶栏对齐的高度不再有意义） -->
     <div class="sidebar__top">
-      <button
-        v-if="!collapsed"
-        type="button"
-        class="sidebar__brand"
-        title="My Navi 导航工作台"
-        @click="emit('toggle-collapse')"
-      >
-        <span class="sidebar__logo">
-          <SvgIcon name="grid" :size="16" filled />
-        </span>
-        <span class="sidebar__brand-text">
-          <strong>My Navi</strong>
-          <small>本地导航工作台</small>
-        </span>
-      </button>
-      <button
-        v-else
-        type="button"
-        class="icon-btn sidebar__expand"
-        title="展开导航栏"
-        aria-label="展开导航栏"
-        @click="emit('toggle-collapse')"
-      >
-        <SvgIcon name="expand" :size="16" />
-      </button>
-
-      <button
-        v-if="!collapsed"
-        type="button"
-        class="icon-btn"
-        :title="`收起导航栏（可在设置中把导航栏移到${position === 'right' ? '左' : '右'}侧）`"
-        aria-label="收起导航栏"
-        @click="emit('toggle-collapse')"
-      >
-        <SvgIcon :name="position === 'right' ? 'chevronRight' : 'chevronLeft'" :size="16" />
-      </button>
+      <!-- 直接用扩展图标本身（public/icons 下的静态资源），保证与浏览器工具栏一致 -->
+      <img class="sidebar__logo" :src="brandIconUrl" alt="" aria-hidden="true" />
+      <span class="sidebar__brand-text">
+        <strong>SeqPage</strong>
+        <small>本地导航工作台</small>
+      </span>
     </div>
 
     <nav class="sidebar__list" ref="listRef">
-      <p v-if="!collapsed" class="sidebar__group-title">导航页面</p>
+      <p class="sidebar__group-title">导航页面</p>
 
       <div
         v-for="page in pages"
@@ -164,7 +134,7 @@ function onContextMenu(page: NavigationPage, event: MouseEvent): void {
           class="sidebar__link"
           :class="{ 'sidebar__link--active': page.id === activePageId }"
           :aria-current="page.id === activePageId ? 'page' : undefined"
-          :title="collapsed ? page.name : `${page.name}（${sectionCounts[page.id] ?? 0} 个分区 / ${websiteCounts[page.id] ?? 0} 个网站）`"
+          :title="`${page.name}（${sectionCounts[page.id] ?? 0} 个分区 / ${websiteCounts[page.id] ?? 0} 个网站）`"
           @click="emit('select', page.id)"
           @dblclick="startRename(page)"
           @contextmenu.prevent="onContextMenu(page, $event)"
@@ -172,19 +142,19 @@ function onContextMenu(page: NavigationPage, event: MouseEvent): void {
           <span class="sidebar__page-icon">
             <SvgIcon :name="page.icon" :size="16" />
           </span>
-          <span v-if="!collapsed" class="sidebar__page-name ellipsis">{{ page.name }}</span>
-          <span v-if="!collapsed" class="sidebar__counts">
-            <span class="badge" :title="`${sectionCounts[page.id] ?? 0} 个分区`">
-              {{ sectionCounts[page.id] ?? 0 }}
-            </span>
-            <span class="badge badge--brand" :title="`${websiteCounts[page.id] ?? 0} 个网站`">
-              {{ websiteCounts[page.id] ?? 0 }}
-            </span>
+          <span class="sidebar__page-name ellipsis">{{ page.name }}</span>
+          <!-- 只显示网站数量：分区数对切换页面没有帮助，两个徽章只会让侧栏变吵 -->
+          <span
+            v-if="websiteCounts[page.id]"
+            class="sidebar__count"
+            :title="`${websiteCounts[page.id]} 个网站`"
+          >
+            {{ websiteCounts[page.id] }}
           </span>
         </button>
 
         <button
-          v-if="!collapsed && editingId !== page.id"
+          v-if="editingId !== page.id"
           type="button"
           class="icon-btn sidebar__more"
           title="页面操作"
@@ -196,20 +166,16 @@ function onContextMenu(page: NavigationPage, event: MouseEvent): void {
         </button>
       </div>
 
-      <button type="button" class="sidebar__add" @click="emit('create-page')">
-        <SvgIcon name="plus" :size="15" />
-        <span v-if="!collapsed">新建导航页面</span>
-      </button>
+      <!--
+        页面级操作（新建 / 重命名 / 上下移 / 删除）统一收敛到每项右侧的
+        「页面操作」菜单里，侧栏不再额外重复一个「新建导航页面」按钮。
+      -->
     </nav>
 
     <div class="sidebar__bottom">
-      <button type="button" class="sidebar__tool" @click="emit('manage-pages')">
-        <SvgIcon name="layers" :size="16" />
-        <span v-if="!collapsed">页面管理</span>
-      </button>
       <button type="button" class="sidebar__tool" @click="emit('open-settings')">
         <SvgIcon name="settings" :size="16" />
-        <span v-if="!collapsed">设置</span>
+        <span>设置</span>
       </button>
     </div>
   </aside>
@@ -222,8 +188,8 @@ function onContextMenu(page: NavigationPage, event: MouseEvent): void {
   width: var(--sidebar-width);
   flex: none;
   height: 100%;
+  /* 纯色白底，不做玻璃拟态 */
   background: var(--bg-app-bar);
-  backdrop-filter: blur(8px);
 }
 
 /* 位于右侧时，分隔线画在自己的左边；位于左侧时画在右边 */
@@ -235,42 +201,32 @@ function onContextMenu(page: NavigationPage, event: MouseEvent): void {
   border-right: 1px solid var(--border-color);
 }
 
-.sidebar--collapsed {
-  width: 56px;
-}
-
+/* 品牌行：固定高度，自动隐藏悬浮时作为侧栏顶部 */
 .sidebar__top {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  padding: var(--space-3);
+  height: 56px;
+  flex: none;
+  padding: 0 var(--space-3);
   border-bottom: 1px solid var(--border-color);
 }
 
-.sidebar__brand {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  flex: 1;
-  min-width: 0;
-  text-align: left;
-}
-
+/* 品牌标识直接用扩展图标；细边框避免白底图标在浅色侧栏上「浮」着没有边界 */
 .sidebar__logo {
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  display: block;
   width: 28px;
   height: 28px;
   border-radius: var(--radius-sm);
-  background: var(--brand-600);
-  color: #fff;
+  border: 1px solid var(--border-color);
+  object-fit: cover;
   flex: none;
 }
 
 .sidebar__brand-text {
   display: flex;
   flex-direction: column;
+  flex: 1;
   min-width: 0;
 }
 
@@ -282,10 +238,6 @@ function onContextMenu(page: NavigationPage, event: MouseEvent): void {
 .sidebar__brand-text small {
   font-size: var(--font-xs);
   color: var(--text-tertiary);
-}
-
-.sidebar__expand {
-  margin: 0 auto;
 }
 
 .sidebar__list {
@@ -335,10 +287,6 @@ function onContextMenu(page: NavigationPage, event: MouseEvent): void {
   transition: background-color var(--transition-fast), color var(--transition-fast);
 }
 
-.sidebar--collapsed .sidebar__link {
-  justify-content: center;
-}
-
 .sidebar__link:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
@@ -369,10 +317,12 @@ function onContextMenu(page: NavigationPage, event: MouseEvent): void {
   font-size: var(--font-base);
 }
 
-.sidebar__counts {
-  display: flex;
-  gap: 4px;
+/* 网站数量：极轻的次级文字，不做成徽章，避免侧栏出现一片彩色小块 */
+.sidebar__count {
   flex: none;
+  font-size: var(--font-xs);
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
 }
 
 .sidebar__more {
@@ -390,24 +340,6 @@ function onContextMenu(page: NavigationPage, event: MouseEvent): void {
   margin: var(--space-1) 0;
 }
 
-.sidebar__add {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-2);
-  margin-top: var(--space-2);
-  padding: var(--space-2);
-  border: 1px dashed var(--border-strong);
-  border-radius: var(--radius-md);
-  color: var(--text-secondary);
-  font-size: var(--font-sm);
-}
-
-.sidebar__add:hover {
-  border-color: var(--brand-400);
-  color: var(--brand-600);
-  background: var(--bg-hover);
-}
 
 .sidebar__bottom {
   display: flex;
@@ -427,18 +359,15 @@ function onContextMenu(page: NavigationPage, event: MouseEvent): void {
   font-size: var(--font-base);
 }
 
-.sidebar--collapsed .sidebar__tool {
-  justify-content: center;
-}
-
 .sidebar__tool:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
 }
 
 /**
- * 窄屏（笔记本、分屏）下侧边栏收成图标条；
+ * 窄屏（笔记本、分屏）下侧边栏自动收成图标条；
  * 更窄时（< 760px）由 App 的布局改为把侧边栏放到工具栏下方独占一行。
+ * 这里是纯响应式行为，与用户的显示/隐藏开关无关。
  */
 @media (max-width: 900px) {
   .sidebar {
@@ -446,15 +375,14 @@ function onContextMenu(page: NavigationPage, event: MouseEvent): void {
   }
 
   .sidebar__page-name,
-  .sidebar__counts,
+  .sidebar__count,
   .sidebar__brand-text {
     display: none;
   }
 }
 
 @media (max-width: 760px) {
-  .sidebar,
-  .sidebar--collapsed {
+  .sidebar {
     width: auto;
     height: auto;
     max-height: 42vh;
@@ -475,7 +403,7 @@ function onContextMenu(page: NavigationPage, event: MouseEvent): void {
   }
 
   .sidebar__page-name,
-  .sidebar__counts {
+  .sidebar__count {
     display: inline;
   }
 }

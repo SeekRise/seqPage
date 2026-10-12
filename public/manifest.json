@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "My Navi - 新标签页导航工作台",
+  "name": "SeqPage",
   "version": "1.0.0",
   "description": "多导航页面、自定义分区、网站卡片拖拽排序的个人导航工作台，数据全部保存在本地。",
   "default_locale": "zh_CN",
@@ -12,7 +12,7 @@
     "128": "icons/icon128.png"
   },
   "action": {
-    "default_title": "My Navi - 打开导航工作台",
+    "default_title": "SeqPage - 打开导航工作台",
     "default_icon": {
       "16": "icons/icon16.png",
       "32": "icons/icon32.png",

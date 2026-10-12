@@ -20,9 +20,9 @@ import {
   type SnapshotLoadResult,
 } from '@/services/repository';
 import { createDemoData, findFallbackSectionId, nextOrder, normalizeSectionOrders, normalizeWebsiteOrders, repairState, reorderByIds } from '@/services/navigation';
-import { SCHEMA_VERSION, type AppSettings, type NaviState, type NavigationPage, type RecentVisit, type Section, type Website } from '@/types';
+import { SCHEMA_VERSION, type AppSettings, type NaviState, type NavigationPage, type Section, type Website } from '@/types';
 import type { IntegrityReport } from '@/types';
-import { DEFAULT_SETTINGS } from '@/utils/constants';
+import { CREATION_LIMITS, DEFAULT_SETTINGS } from '@/utils/constants';
 import { createId } from '@/utils/common';
 
 /** 页面/分区/网站的新建输入 */
@@ -485,6 +485,15 @@ export const store = {
   },
 
   async addSection(pageId: string, input: SectionInput): Promise<{ ok: boolean; message: string; section?: Section }> {
+    // 守卫放在 mutate 之前：只拦「新增」，不碰已有数据
+    const existing = state.data.sections.filter((item) => item.pageId === pageId).length;
+    if (existing >= CREATION_LIMITS.maxSectionsPerPage) {
+      return {
+        ok: false,
+        message: `每个导航页面最多 ${CREATION_LIMITS.maxSectionsPerPage} 个分区，请先删除一个再新建。`,
+      };
+    }
+
     const timestamp = Date.now();
     const section: Section = {
       id: createId('sec'),
@@ -621,6 +630,14 @@ export const store = {
     sectionId: string,
     input: WebsiteInput,
   ): Promise<{ ok: boolean; message: string; website?: Website }> {
+    const existing = state.data.websites.filter((item) => item.sectionId === sectionId).length;
+    if (existing >= CREATION_LIMITS.maxWebsitesPerSection) {
+      return {
+        ok: false,
+        message: `每个分区最多 ${CREATION_LIMITS.maxWebsitesPerSection} 个网站，请先删除或移走一些。`,
+      };
+    }
+
     const timestamp = Date.now();
     const website: Website = {
       id: createId('web'),
@@ -729,6 +746,18 @@ export const store = {
     const target = state.data.sections.find((section) => section.id === targetSectionId);
     if (!target) return { ok: false, message: '目标分区不存在，可能已被删除。' };
 
+    // 移动同样会让目标分区超限，所以要在同一条路径上守住（已经在目标分区里的条目不算占用）
+    const incoming = state.data.websites.filter(
+      (website) => idSet.has(website.id) && website.sectionId !== targetSectionId,
+    ).length;
+    const existing = state.data.websites.filter((website) => website.sectionId === targetSectionId).length;
+    if (existing + incoming > CREATION_LIMITS.maxWebsitesPerSection) {
+      return {
+        ok: false,
+        message: `「${target.name}」最多容纳 ${CREATION_LIMITS.maxWebsitesPerSection} 个网站（已有 ${existing} 个），无法再移入 ${incoming} 个。`,
+      };
+    }
+
     return mutate((draft) => {
       const touched = new Set<string>();
       let order = nextOrder(draft.websites.filter((website) => website.sectionId === targetSectionId));
@@ -800,41 +829,6 @@ export const store = {
       },
       { debounceMs: 0 },
     );
-  },
-
-  /* ---------------- 最近访问 ---------------- */
-
-  recordVisit(website: Website): void {
-    if (!state.data.settings.recentVisitsEnabled) return;
-
-    const visit: RecentVisit = {
-      id: createId('visit'),
-      websiteId: website.id,
-      name: website.name,
-      url: website.url,
-      icon: website.icon,
-      iconType: website.iconType,
-      pageId: website.pageId,
-      sectionId: website.sectionId,
-      visitedAt: Date.now(),
-    };
-
-    const limit = state.data.settings.recentVisitsLimit;
-    const nextVisits = [visit, ...state.data.recentVisits.filter((item) => item.websiteId !== website.id)]
-      .sort((a, b) => b.visitedAt - a.visitedAt)
-      .slice(0, limit);
-    state.data.recentVisits = nextVisits;
-    scheduleFlush();
-  },
-
-  async clearRecentVisits(): Promise<MutateResult> {
-    return mutate((draft) => {
-      draft.recentVisits = [];
-    });
-  },
-
-  recentVisits(): RecentVisit[] {
-    return [...state.data.recentVisits].sort((a, b) => b.visitedAt - a.visitedAt);
   },
 
   /* ---------------- 设置 ---------------- */

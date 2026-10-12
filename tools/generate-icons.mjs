@@ -1,186 +1,179 @@
 /**
- * My Navi 图标生成脚本（零依赖）
+ * SeqPage 图标生成脚本
  *
- * 作用：把内置的矢量描述光栅化为 PNG，生成扩展所需的 16/32/48/128(及 192) 图标，
- * 避免引入 sharp/canvas 之类的重型依赖，也避免从网络下载图片资源。
+ * 源图：项目根目录的 icon.jfif（正方形 JPEG，可传参换别的路径）。
+ * 产物：public/icons/icon{16,32,48,128,192}.png
  *
- * 图形：柔和圆角方块（低饱和蓝渐变）+ 白色「导航九宫格」。
- * 光栅化采用 3x3 超采样抗锯齿。
+ * 为什么走 headless Chrome 而不是 sharp / canvas：
+ * Node 没有内置 JPEG 解码器，而本仓库的工具链刻意保持**零依赖**
+ * （见 tools 下其它脚本）。这里复用 screenshot.mjs / smoke-test.mjs 那套 CDP 方案，
+ * 把源图以 data URL 交给浏览器里的 canvas 缩放，再取回 PNG——
+ * data URL 不会污染 canvas，所以 toDataURL 可用。
  *
- * 用法：node tools/generate-icons.mjs
+ * 用法：node tools/generate-icons.mjs [源图路径]
+ * 未找到 Chrome 时跳过并返回成功（与其它测试脚本一致）。
  */
-import { deflateSync } from 'node:zlib';
-import { mkdirSync, writeFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { spawn } from 'node:child_process';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, extname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const HERE = dirname(fileURLToPath(import.meta.url));
-const OUT_DIR = resolve(HERE, '../public/icons');
-
-/* ------------------------------------------------------------------ *
- * PNG 编码
- * ------------------------------------------------------------------ */
-
-const CRC_TABLE = (() => {
-  const table = new Uint32Array(256);
-  for (let n = 0; n < 256; n += 1) {
-    let c = n;
-    for (let k = 0; k < 8; k += 1) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
-    table[n] = c >>> 0;
-  }
-  return table;
-})();
-
-function crc32(buf) {
-  let c = 0xffffffff;
-  for (const byte of buf) c = CRC_TABLE[(c ^ byte) & 0xff] ^ (c >>> 8);
-  return (c ^ 0xffffffff) >>> 0;
-}
-
-function chunk(type, data) {
-  const len = Buffer.alloc(4);
-  len.writeUInt32BE(data.length, 0);
-  const body = Buffer.concat([Buffer.from(type, 'latin1'), data]);
-  const crc = Buffer.alloc(4);
-  crc.writeUInt32BE(crc32(body), 0);
-  return Buffer.concat([len, body, crc]);
-}
-
-/** @param {number} width @param {number} height @param {Uint8Array} rgba */
-function encodePng(width, height, rgba) {
-  const stride = width * 4;
-  const raw = Buffer.alloc((stride + 1) * height);
-  for (let y = 0; y < height; y += 1) {
-    raw[y * (stride + 1)] = 0; // filter: none
-    Buffer.from(rgba.buffer, rgba.byteOffset + y * stride, stride).copy(raw, y * (stride + 1) + 1);
-  }
-  const ihdr = Buffer.alloc(13);
-  ihdr.writeUInt32BE(width, 0);
-  ihdr.writeUInt32BE(height, 4);
-  ihdr[8] = 8; // bit depth
-  ihdr[9] = 6; // color type: RGBA
-  ihdr[10] = 0;
-  ihdr[11] = 0;
-  ihdr[12] = 0;
-  return Buffer.concat([
-    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
-    chunk('IHDR', ihdr),
-    chunk('IDAT', deflateSync(raw, { level: 9 })),
-    chunk('IEND', Buffer.alloc(0)),
-  ]);
-}
-
-/* ------------------------------------------------------------------ *
- * 几何与绘制
- * ------------------------------------------------------------------ */
-
-/** 圆角矩形的有符号距离场（<0 表示在形状内部） */
-function sdRoundRect(px, py, cx, cy, halfW, halfH, radius) {
-  const dx = Math.abs(px - cx) - (halfW - radius);
-  const dy = Math.abs(py - cy) - (halfH - radius);
-  const ox = Math.max(dx, 0);
-  const oy = Math.max(dy, 0);
-  return Math.hypot(ox, oy) + Math.min(Math.max(dx, dy), 0) - radius;
-}
-
-function inside(distance) {
-  return distance <= 0;
-}
-
-/** 在归一化坐标系(0..1)中描述图形 */
-function drawIcon(size) {
-  const ss = 3; // 超采样倍数
-  const out = new Uint8Array(size * size * 4);
-
-  const topColor = [0x5b, 0x8c, 0xf5];
-  const bottomColor = [0x33, 0x66, 0xd6];
-  const radius = 0.22;
-
-  for (let y = 0; y < size; y += 1) {
-    for (let x = 0; x < size; x += 1) {
-      let r = 0;
-      let g = 0;
-      let b = 0;
-      let a = 0;
-
-      for (let sy = 0; sy < ss; sy += 1) {
-        for (let sx = 0; sx < ss; sx += 1) {
-          // 归一化到 0..1，取采样点中心
-          const u = (x + (sx + 0.5) / ss) / size;
-          const v = (y + (sy + 0.5) / ss) / size;
-
-          if (!inside(sdRoundRect(u, v, 0.5, 0.5, 0.5, 0.5, radius))) continue;
-
-          // 底色：竖向渐变
-          const t = v;
-          let cr = topColor[0] + (bottomColor[0] - topColor[0]) * t;
-          let cg = topColor[1] + (bottomColor[1] - topColor[1]) * t;
-          let cb = topColor[2] + (bottomColor[2] - topColor[2]) * t;
-
-          // 覆盖层：白色导航块
-          const blocks = [
-            // 上排两个方块
-            sdRoundRect(u, v, 0.345, 0.395, 0.115, 0.115, 0.035),
-            sdRoundRect(u, v, 0.655, 0.395, 0.115, 0.115, 0.035),
-          ];
-          // 底部通栏
-          blocks.push(sdRoundRect(u, v, 0.5, 0.675, 0.27, 0.1, 0.035));
-
-          if (blocks.some(inside)) {
-            cr = 255;
-            cg = 255;
-            cb = 255;
-          }
-
-          r += cr;
-          g += cg;
-          b += cb;
-          a += 255;
-        }
-      }
-
-      const samples = ss * ss;
-      const idx = (y * size + x) * 4;
-      if (a === 0) continue;
-      const covered = a / 255;
-      out[idx] = Math.round(r / covered);
-      out[idx + 1] = Math.round(g / covered);
-      out[idx + 2] = Math.round(b / covered);
-      out[idx + 3] = Math.round(a / samples);
-    }
-  }
-
-  return out;
-}
-
-/* ------------------------------------------------------------------ *
- * 输出
- * ------------------------------------------------------------------ */
-
-mkdirSync(OUT_DIR, { recursive: true });
-
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const OUT_DIR = join(ROOT, 'public', 'icons');
+const SOURCE = resolve(process.argv[2] ?? join(ROOT, 'icon.jfif'));
 const SIZES = [16, 32, 48, 128, 192];
-for (const size of SIZES) {
-  const rgba = drawIcon(size);
-  const png = encodePng(size, size, rgba);
-  const file = resolve(OUT_DIR, `icon${size}.png`);
-  writeFileSync(file, png);
-  console.log(`generated ${file} (${png.length} bytes)`);
+const DEBUG_PORT = 9556;
+
+const MIME_BY_EXT = {
+  '.jfif': 'image/jpeg',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.png': 'image/png',
+  '.webp': 'image/webp',
+};
+
+const chromePath = [
+  `${process.env.ProgramFiles}\\Google\\Chrome\\Application\\chrome.exe`,
+  `${process.env['ProgramFiles(x86)']}\\Google\\Chrome\\Application\\chrome.exe`,
+  `${process.env.LOCALAPPDATA}\\Google\\Chrome\\Application\\chrome.exe`,
+  `${process.env.ProgramFiles}\\Microsoft\\Edge\\Application\\msedge.exe`,
+  `${process.env['ProgramFiles(x86)']}\\Microsoft\\Edge\\Application\\msedge.exe`,
+].find((candidate) => candidate && existsSync(candidate));
+
+if (!chromePath) {
+  console.log('未找到 Chrome/Edge，跳过图标生成。');
+  process.exit(0);
 }
 
-// 同时输出一份 SVG 源文件，方便后续替换或再生成
-const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="My Navi">
-  <defs>
-    <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#5B8CF5"/>
-      <stop offset="1" stop-color="#3366D6"/>
-    </linearGradient>
-  </defs>
-  <rect width="128" height="128" rx="28" fill="url(#g)"/>
-  <rect x="29" y="36" width="30" height="30" rx="9" fill="#fff"/>
-  <rect x="69" y="36" width="30" height="30" rx="9" fill="#fff"/>
-  <rect x="29" y="78" width="70" height="22" rx="8" fill="#fff"/>
-</svg>
-`;
-writeFileSync(resolve(OUT_DIR, 'icon.svg'), svg, 'utf8');
-console.log(`generated ${resolve(OUT_DIR, 'icon.svg')}`);
+if (!existsSync(SOURCE)) {
+  console.error(`未找到源图：${SOURCE}`);
+  process.exit(1);
+}
+
+const mime = MIME_BY_EXT[extname(SOURCE).toLowerCase()];
+if (!mime) {
+  console.error(`不支持的源图格式：${extname(SOURCE)}（支持 .jfif/.jpg/.jpeg/.png/.webp）`);
+  process.exit(1);
+}
+
+const dataUrl = `data:${mime};base64,${readFileSync(SOURCE).toString('base64')}`;
+const profileDir = mkdtempSync(join(tmpdir(), 'seqpage-icons-'));
+
+const chrome = spawn(
+  chromePath,
+  [
+    '--headless=new',
+    `--remote-debugging-port=${DEBUG_PORT}`,
+    `--user-data-dir=${profileDir}`,
+    '--no-first-run',
+    '--disable-extensions',
+    '--disable-gpu',
+    'about:blank',
+  ],
+  { stdio: 'ignore' },
+);
+
+function cleanup() {
+  try {
+    chrome.kill();
+  } catch {
+    /* 已经退出 */
+  }
+  try {
+    rmSync(profileDir, { recursive: true, force: true });
+  } catch {
+    /* 临时目录清理失败不影响结果 */
+  }
+}
+
+async function waitForTarget() {
+  for (let i = 0; i < 60; i += 1) {
+    try {
+      const res = await fetch(`http://127.0.0.1:${DEBUG_PORT}/json/list`);
+      const list = await res.json();
+      const page = list.find((t) => t.type === 'page' && t.webSocketDebuggerUrl);
+      if (page) return page;
+    } catch {
+      /* 端口还没起来，继续重试 */
+    }
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  throw new Error('等待调试端口超时');
+}
+
+try {
+  const target = await waitForTarget();
+  const socket = new WebSocket(target.webSocketDebuggerUrl);
+  await new Promise((r) => socket.addEventListener('open', r, { once: true }));
+
+  let id = 0;
+  const pending = new Map();
+  socket.addEventListener('message', (event) => {
+    const payload = JSON.parse(event.data);
+    if (payload.id && pending.has(payload.id)) {
+      const { resolve: res, reject: rej } = pending.get(payload.id);
+      pending.delete(payload.id);
+      payload.error ? rej(new Error(payload.error.message)) : res(payload.result);
+    }
+  });
+  const call = (method, params = {}) =>
+    new Promise((res, rej) => {
+      id += 1;
+      pending.set(id, { resolve: res, reject: rej });
+      socket.send(JSON.stringify({ id, method, params }));
+    });
+
+  await call('Runtime.enable');
+
+  const expression = `(async () => {
+    const img = new Image();
+    await new Promise((resolve, reject) => {
+      img.onload = resolve;
+      img.onerror = () => reject(new Error('源图解码失败'));
+      img.src = ${JSON.stringify(dataUrl)};
+    });
+
+    const out = {};
+    for (const size of ${JSON.stringify(SIZES)}) {
+      const canvas = document.createElement('canvas');
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext('2d');
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      // 非正方形时按短边居中裁剪（cover），避免图标被拉伸变形
+      const scale = Math.max(size / img.width, size / img.height);
+      const w = img.width * scale;
+      const h = img.height * scale;
+      ctx.drawImage(img, (size - w) / 2, (size - h) / 2, w, h);
+      out[size] = canvas.toDataURL('image/png');
+    }
+    return { width: img.width, height: img.height, out };
+  })()`;
+
+  const evaluated = await call('Runtime.evaluate', {
+    expression,
+    awaitPromise: true,
+    returnByValue: true,
+  });
+  if (evaluated.exceptionDetails) {
+    throw new Error(evaluated.exceptionDetails.exception?.description ?? '浏览器端处理失败');
+  }
+
+  const { width, height, out } = evaluated.result.value;
+  console.log(`源图：${SOURCE}（${width}×${height}）`);
+
+  mkdirSync(OUT_DIR, { recursive: true });
+  for (const size of SIZES) {
+    const base64 = String(out[size]).replace(/^data:image\/png;base64,/, '');
+    const png = Buffer.from(base64, 'base64');
+    const file = join(OUT_DIR, `icon${size}.png`);
+    writeFileSync(file, png);
+    console.log(`generated ${file} (${png.length} bytes)`);
+  }
+
+  socket.close();
+} finally {
+  cleanup();
+}

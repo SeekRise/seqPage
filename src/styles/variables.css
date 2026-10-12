@@ -9,40 +9,44 @@
 :root {
   color-scheme: light;
 
-  /* ------- 品牌色：低饱和蓝 ------- */
+  /* ------- 品牌蓝阶 -------
+     语义固定：500 = 焦点环，600 = 主强调色（主按钮/选中），700 = 主强调色悬停。
+     组件必须按这套语义取色，不要再自行挑步进值。 */
   --brand-50: #f2f6fe;
-  --brand-100: #e4ecfd;
-  --brand-200: #c9d9fa;
-  --brand-300: #a3bdf5;
-  --brand-400: #6f93ec;
-  --brand-500: #3b6fe0;
-  --brand-600: #2f5cc4;
-  --brand-700: #2749a0;
-  --brand-800: #1f3a7c;
+  --brand-100: #e6eefd;
+  --brand-200: #cbddfa;
+  --brand-300: #a3c2f4;
+  --brand-400: #6d9aec;
+  --brand-500: #4a80ea;
+  --brand-600: #376ae6;
+  --brand-700: #2857c5;
+  --brand-800: #1e44a0;
 
-  /* ------- 页面与面板 ------- */
-  --bg-page: #eef2f8;
+  /* ------- 页面与面板 -------
+     中性灰底 + 纯白卡片：低对比、无玻璃拟态（不透明，故不需要 backdrop-filter）。
+     背景色同时定义在 constants.ts 的 DEFAULT_BACKGROUND，改一处必须同步另一处。 */
+  --bg-page: #f5f7fa;
   --bg-page-image: none;
-  --bg-app-bar: rgba(255, 255, 255, 0.88);
+  --bg-app-bar: #ffffff;
   --bg-panel: #ffffff;
-  --bg-panel-translucent: rgba(255, 255, 255, 0.86);
-  --bg-subtle: #f5f7fb;
-  --bg-hover: #eef3fd;
-  --bg-active: #e2eafb;
+  --bg-panel-translucent: #ffffff;
+  --bg-subtle: #f5f7fa;
+  --bg-hover: #f3f6fc;
+  --bg-active: #eaf0ff;
   --bg-input: #ffffff;
-  --bg-overlay: rgba(17, 24, 39, 0.42);
+  --bg-overlay: rgba(39, 52, 73, 0.42);
   --panel-opacity: 1;
 
-  /* ------- 文本 ------- */
-  --text-primary: #1b2230;
-  --text-secondary: #5b6675;
-  --text-tertiary: #8a94a3;
+  /* ------- 文本：克制的灰阶，靠色阶而非过小字号制造层级 ------- */
+  --text-primary: #273449;
+  --text-secondary: #7b8798;
+  --text-tertiary: #a0a9b6;
   --text-inverse: #ffffff;
   --text-on-brand: #ffffff;
 
-  /* ------- 边框与分割线 ------- */
-  --border-color: #e2e7f0;
-  --border-strong: #ccd4e2;
+  /* ------- 边框与分割线：弱化到几乎只剩分隔作用 ------- */
+  --border-color: #edf0f4;
+  --border-strong: #dde3ec;
   --border-focus: var(--brand-500);
 
   /* ------- 语义色 ------- */
@@ -55,12 +59,13 @@
   --color-info: #3b6fe0;
   --color-info-bg: #f0f5fe;
 
-  /* ------- 圆角 ------- */
+  /* ------- 圆角：主卡片 12 / 按钮 8 / 输入框 9 / 小图标容器 8 ------- */
   --radius-xs: 4px;
-  --radius-sm: 6px;
+  --radius-sm: 8px;
+  --radius-input: 9px;
   --radius-md: 10px;
-  --radius-lg: 14px;
-  --radius-xl: 18px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
   --radius-pill: 999px;
   /* 用户可在设置中调整 */
   --radius-card: 12px;
@@ -83,17 +88,38 @@
   --font-xl: 18px;
   --font-2xl: 22px;
 
-  /* ------- 阴影 ------- */
-  --shadow-xs: 0 1px 2px rgba(23, 34, 59, 0.05);
-  --shadow-sm: 0 2px 6px rgba(23, 34, 59, 0.07);
-  --shadow-md: 0 6px 18px rgba(23, 34, 59, 0.1);
-  --shadow-lg: 0 16px 40px rgba(23, 34, 59, 0.18);
+  /* ------- 阴影 -------
+     卡片默认几乎不用阴影，靠留白与背景差区分；
+     只有悬停与浮层（弹窗/下拉菜单）才允许出现可见阴影。 */
+  --shadow-xs: 0 1px 2px rgba(39, 52, 73, 0.03);
+  --shadow-sm: 0 1px 3px rgba(39, 52, 73, 0.05), 0 1px 2px rgba(39, 52, 73, 0.03);
+  --shadow-md: 0 4px 14px rgba(39, 52, 73, 0.08);
+  --shadow-lg: 0 12px 32px rgba(39, 52, 73, 0.14);
 
   /* ------- 布局 ------- */
-  --sidebar-width: 232px;
-  --content-max-width: 1400px;
-  --card-min-width: 168px;
-  --card-height: 60px;
+  --sidebar-width: 184px;
+  /* 需容纳 4 列分区卡片，故大于单列阅读宽度 */
+  --content-max-width: 1600px;
+  /* 分区卡片的最小列宽（配合容器查询使用，防止列被压得过窄） */
+  --section-min-width: 280px;
+  /*
+   * 分区内网站条目的纵向内边距。密度设置改的是它而不是高度：
+   * 图标本身就有 32px，用 min-height 定高度在多数取值下都会被内容顶开，
+   * 改内边距才能让「紧凑 / 舒适 / 宽松」真正看得出差别。
+   */
+  --row-padding: 8px;
+  /*
+   * 行高下限。关闭「显示网站描述」后条目只剩名称（约 19px），
+   * 单靠内边距会掉到 35px 左右——既低于推荐的 44–52px，
+   * 也让点击区域过小，所以这里保一个地板值。
+   */
+  --row-min-height: 44px;
+  /* 搜索框的规定高度（原顶栏已移除，搜索框悬浮于页面内容顶部） */
+  --search-height: 48px;
+  /* 分区卡片标题栏高度 */
+  --section-header-height: 46px;
+  /* 搜索区最大宽度：页面视觉主体，加长后更醒目（不占满整屏） */
+  --search-max-width: 720px;
   --transition-fast: 120ms ease;
 }
 
@@ -104,6 +130,8 @@
 [data-theme='dark'] {
   color-scheme: dark;
 
+  /* 深色下的蓝阶是「前景色」语义（600 为浅蓝主色 + 深色文字），
+     明暗关系与浅色模式相反，不要照搬浅色模式的步进值。 */
   --brand-50: #1b2434;
   --brand-100: #202b3d;
   --brand-200: #2a3850;
@@ -116,11 +144,11 @@
 
   --bg-page: #161a22;
   --bg-page-image: none;
-  --bg-app-bar: rgba(28, 33, 43, 0.9);
+  --bg-app-bar: #1c212b;
   --bg-panel: #1e232d;
-  --bg-panel-translucent: rgba(30, 35, 45, 0.88);
+  --bg-panel-translucent: #1e232d;
   --bg-subtle: #232936;
-  --bg-hover: #2a3242;
+  --bg-hover: #262d3a;
   --bg-active: #2f3a4e;
   --bg-input: #232936;
   --bg-overlay: rgba(6, 9, 14, 0.62);
@@ -154,18 +182,18 @@
  * ------------------------------------------------------------------ */
 
 [data-density='compact'] {
-  --card-height: 50px;
-  --card-min-width: 152px;
+  --row-padding: 4px;
+  --section-min-width: 240px;
 }
 
 [data-density='comfortable'] {
-  --card-height: 60px;
-  --card-min-width: 168px;
+  --row-padding: 8px;
+  --section-min-width: 280px;
 }
 
 [data-density='loose'] {
-  --card-height: 74px;
-  --card-min-width: 200px;
+  --row-padding: 12px;
+  --section-min-width: 340px;
 }
 
 /* ------------------------------------------------------------------ *

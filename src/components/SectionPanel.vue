@@ -9,6 +9,7 @@ import { computed, ref } from 'vue';
 import SvgIcon from '@/components/SvgIcon.vue';
 import { useSortable } from '@/composables/useSortable';
 import type { Section, Website } from '@/types';
+import { CREATION_LIMITS } from '@/utils/constants';
 
 const props = defineProps<{
   section: Section;
@@ -20,7 +21,6 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   'toggle-collapse': [section: Section];
-  'edit-section': [section: Section];
   remove: [section: Section];
   'add-website': [section: Section];
   'context-menu': [payload: { section: Section; event: MouseEvent }];
@@ -37,6 +37,15 @@ const allSelected = computed(
 
 const websiteCount = computed(() => props.websites.length);
 
+/** 达到每区上限后不再放行新增：按钮禁用并把原因写进 title，而不是点了才弹错 */
+const addDisabled = computed(() => websiteCount.value >= CREATION_LIMITS.maxWebsitesPerSection);
+
+const addLabel = computed(() =>
+  addDisabled.value
+    ? `分区「${props.section.name}」已有 ${websiteCount.value} 个网站，达到每区上限 ${CREATION_LIMITS.maxWebsitesPerSection} 个`
+    : `添加网站到分区 ${props.section.name}`,
+);
+
 const gridRef = ref<HTMLElement | null>(null);
 
 /**
@@ -46,6 +55,10 @@ const gridRef = ref<HTMLElement | null>(null);
  */
 useSortable({
   container: gridRef,
+  draggable: '.website-card',
+  // 手柄限定为专用元素：否则从条目任意位置按下都会开始拖拽，
+  // 与「点击打开网站」的交互互相抢事件
+  handle: '.website-card__grip',
   order: () => props.websites.map((website) => website.id),
   onReorder: (ids) => emit('reorder', ids),
   animation: 150,
@@ -67,10 +80,20 @@ function onHeaderContextMenu(event: MouseEvent): void {
       :class="{ 'section-panel__header--collapsed': section.collapsed }"
       @contextmenu.prevent="onHeaderContextMenu"
     >
+      <!--
+        拖拽手柄必须是独立的元素：它是本分区唯一的拖拽起点。
+        以前整个 header 都是手柄，按住「编辑」「更多」等按钮时也会触发拖拽，
+        导致点击被吞掉。
+      -->
+      <span class="section-panel__grip" title="按住拖动可调整分区顺序" aria-hidden="true">
+        <SvgIcon name="menu" :size="14" />
+      </span>
+
       <button
         type="button"
         class="icon-btn section-panel__collapse"
-        :title="section.collapsed ? '展开分区' : '折叠分区'"
+        :title="`${section.collapsed ? '展开' : '折叠'}分区 ${section.name}`"
+        :aria-label="`${section.collapsed ? '展开' : '折叠'}分区 ${section.name}`"
         :aria-expanded="!section.collapsed"
         @click="emit('toggle-collapse', section)"
       >
@@ -96,25 +119,11 @@ function onHeaderContextMenu(event: MouseEvent): void {
         <span>全选</span>
       </label>
 
+      <!--
+        标题栏只保留折叠与「更多操作」：编辑、排序、删除等低频管理动作
+        统一收在更多菜单里（App.vue 的 sectionMenuItems），避免标题栏挂一排按钮。
+      -->
       <div class="section-panel__actions">
-        <button
-          type="button"
-          class="icon-btn"
-          title="编辑分区"
-          aria-label="编辑分区"
-          @click="emit('edit-section', section)"
-        >
-          <SvgIcon name="pencil" :size="15" />
-        </button>
-        <button
-          type="button"
-          class="icon-btn"
-          title="添加网站到该分区"
-          aria-label="添加网站"
-          @click="emit('add-website', section)"
-        >
-          <SvgIcon name="plus" :size="16" />
-        </button>
         <button
           type="button"
           class="icon-btn"
@@ -126,10 +135,6 @@ function onHeaderContextMenu(event: MouseEvent): void {
           <SvgIcon name="more" :size="16" />
         </button>
       </div>
-
-      <span class="section-panel__drag" title="按住标题栏拖动可调整分区顺序">
-        <SvgIcon name="menu" :size="15" />
-      </span>
     </header>
 
     <div v-show="!section.collapsed" class="section-panel__body">
@@ -137,39 +142,68 @@ function onHeaderContextMenu(event: MouseEvent): void {
         <slot name="websites" />
       </div>
 
-      <div v-else class="section-panel__empty">
-        <SvgIcon name="link" :size="18" />
-        <p class="section-panel__empty-text">该分区还没有网站</p>
-        <button type="button" class="btn btn--default btn--sm" @click="emit('add-website', section)">
-          <SvgIcon name="plus" :size="14" />
-          添加网站
-        </button>
-      </div>
+      <p v-else class="section-panel__empty-text">该分区还没有网站</p>
+
+      <!-- 常驻的底部添加入口：仅图标（文字收进 title / aria-label） -->
+      <button
+        type="button"
+        class="section-panel__add"
+        :disabled="addDisabled"
+        :aria-label="addLabel"
+        :title="addLabel"
+        @click="emit('add-website', section)"
+      >
+        <SvgIcon name="plus" :size="16" />
+      </button>
     </div>
   </section>
 </template>
 
 <style scoped>
+/*
+ * 分区卡片：白底、细边框、柔和圆角、极轻阴影。
+ * 高度完全由内容决定（网格容器上是 align-items: start），
+ * 所以这里不设任何高度约束。
+ *
+ * 背景走 color-mix + --panel-opacity，让设置里的「面板不透明度」
+ * 真正生效（该变量此前被写入却无人消费）。下限在 parseSettings 里
+ * 被限制为 0.4，因此卡片始终保有可读的底色。
+ */
 .section-panel {
-  background: var(--bg-panel-translucent);
+  background: color-mix(in srgb, var(--bg-panel) calc(var(--panel-opacity, 1) * 100%), transparent);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-xs);
   overflow: hidden;
 }
 
+/* 标题栏固定高度：悬停时出现的按钮不会把标题顶得上下位移 */
 .section-panel__header {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-3);
+  gap: var(--space-1);
+  height: var(--section-header-height);
+  padding: 0 var(--space-2) 0 var(--space-3);
   border-bottom: 1px solid var(--border-color);
-  cursor: grab;
+  /* header 本身不再是拖拽区，grab 光标只出现在手柄上 */
   user-select: none;
 }
 
 .section-panel__header--collapsed {
   border-bottom-color: transparent;
+}
+
+/* 唯一的拖拽起点，光标只在这里提示可拖拽 */
+.section-panel__grip {
+  display: flex;
+  align-items: center;
+  flex: none;
+  color: var(--text-tertiary);
+  cursor: grab;
+}
+
+.section-panel__grip:active {
+  cursor: grabbing;
 }
 
 .section-panel__collapse {
@@ -213,40 +247,61 @@ function onHeaderContextMenu(event: MouseEvent): void {
   gap: 2px;
 }
 
-.section-panel__drag {
-  display: flex;
-  align-items: center;
-  color: var(--text-tertiary);
-  padding-left: 2px;
-}
-
 .section-panel__body {
-  padding: var(--space-3);
+  padding: var(--space-2) var(--space-3) var(--space-3);
 }
 
+/*
+ * 网站改为纵向列表（类名保留：它是拖拽容器，测试脚本也依赖它）。
+ * 间距用 1px 的负外边距方案更复杂，这里直接用 column + gap：
+ * 每行是独立条目，无需网格。
+ */
 .section-panel__grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(var(--card-min-width), 1fr));
-  gap: var(--space-2);
-}
-
-.section-panel__empty {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-5) var(--space-3);
-  color: var(--text-tertiary);
-  border: 1px dashed var(--border-color);
-  border-radius: var(--radius-md);
+  gap: 2px;
 }
 
 .section-panel__empty-text {
+  padding: var(--space-3) var(--space-2);
   font-size: var(--font-sm);
+  color: var(--text-tertiary);
+  text-align: center;
+}
+
+/* 底部常驻的添加入口：低调的整行图标按钮 */
+.section-panel__add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  width: 100%;
+  margin-top: var(--space-1);
+  padding: var(--space-1);
+  color: var(--text-tertiary);
+  border-radius: var(--radius-sm);
+  transition: background-color var(--transition-fast), color var(--transition-fast);
+}
+
+.section-panel__add:hover {
+  background: var(--bg-hover);
+  color: var(--brand-600);
+}
+
+/* 达到每区上限：保留位置（按钮不消失，用户才知道入口还在、只是满了） */
+.section-panel__add:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.section-panel__add:disabled:hover {
+  background: transparent;
+  color: var(--text-tertiary);
 }
 
 @media (hover: none) {
-  .section-panel__header {
+  /* 触屏没有悬停，拖拽手柄保持可见即可（光标形状无意义） */
+  .section-panel__grip {
     cursor: default;
   }
 }

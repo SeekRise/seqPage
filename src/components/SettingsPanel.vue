@@ -9,7 +9,7 @@
  * 关键交互控件带 data-testid（setting-{组}-{值}），测试脚本依赖它定位，
  * 不依赖 Naive UI 的内部 class —— 那不是公开 API。
  */
-import { computed, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import {
   NAlert,
   NButton,
@@ -26,14 +26,16 @@ import {
   NTabs,
 } from 'naive-ui';
 import SvgIcon from '@/components/SvgIcon.vue';
-import type { AppSettings, CardDensity, SidebarPosition, ThemeMode } from '@/types';
+import { previewBackground } from '@/composables/useTheme';
+import type { AppSettings, BackgroundConfig, CardDensity, SidebarPosition, ThemeMode } from '@/types';
 import { SEARCH_ENGINES } from '@/utils/constants';
+import { dataUrlByteSize, fileToBackgroundDataUrl, isUploadedBackground } from '@/utils/image';
 
 const props = defineProps<{
   modelValue: boolean;
   settings: AppSettings;
   /** 统计信息 */
-  stats: { pages: number; sections: number; websites: number; recentVisits: number };
+  stats: { pages: number; sections: number; websites: number };
   /** 存储占用（字节），null 表示未知 */
   usage: { bytes: number; quotaBytes: number } | null;
   /** 存储后端名称，便于排查 */
@@ -47,11 +49,10 @@ const props = defineProps<{
 const emit = defineEmits<{
   'update:modelValue': [value: boolean];
   change: [patch: Partial<AppSettings>];
-  export: [options: { includeRecentVisits: boolean }];
+  export: [];
   'pick-import': [];
   'restore-defaults': [];
   'clear-data': [];
-  'clear-recent': [];
   'clear-search-history': [];
 }>();
 
@@ -64,9 +65,17 @@ const visible = computed({
 type TabId = 'appearance' | 'behavior' | 'background' | 'data';
 
 const activeTab = ref<TabId>('appearance');
-const exportRecent = ref(false);
 /** 背景图片地址的本地编辑态：@change（失焦/回车）才提交，避免每敲一个字符就写存储 */
 const bgImageUrl = ref(props.settings.background.imageUrl);
+const bgFileInput = ref<HTMLInputElement | null>(null);
+const bgUploading = ref(false);
+const bgUploadError = ref('');
+
+/**
+ * 取色与拖滑块的合并提交延迟：拖动期间只做 CSS 预览，停手后才落盘。
+ * 250ms 足够覆盖一次拖动中的连续 mousemove，又短到用户察觉不出延迟。
+ */
+const BACKGROUND_COMMIT_DELAY = 250;
 
 const themeOptions: Array<{ value: ThemeMode; label: string; icon: string }> = [
   { value: 'light', label: '浅色', icon: 'sun' },
@@ -110,15 +119,35 @@ const usageText = computed(() => {
   return `${used} KB / 约 ${total} MB`;
 });
 
+/** 已上传图片的体量提示；远程地址则只说明来源 */
+const bgImageSourceText = computed(() => {
+  const bg = props.settings.background;
+  if (!bg.imageUrl) return '';
+  if (isUploadedBackground(bg)) {
+    const kb = Math.max(1, Math.round(dataUrlByteSize(bg.imageUrl) / 1024));
+    return `已上传本地图片，约 ${kb} KB`;
+  }
+  return '当前使用远程图片地址';
+});
+
 watch(
   () => props.modelValue,
   (open) => {
     if (open) {
       activeTab.value = 'appearance';
-      bgImageUrl.value = props.settings.background.imageUrl;
+      // data URL 有几千个字符，塞进输入框既难看又拖慢渲染：上传的图只显示预览
+      bgImageUrl.value = isUploadedBackground(props.settings.background)
+        ? ''
+        : props.settings.background.imageUrl;
+      bgUploadError.value = '';
+    } else {
+      // 关闭面板即落盘，避免「拖完就关」丢掉最后一次预览
+      flushBackground();
     }
   },
 );
+
+onBeforeUnmount(flushBackground);
 
 function patchSettings(patch: Partial<AppSettings>): void {
   emit('change', patch);
@@ -126,6 +155,38 @@ function patchSettings(patch: Partial<AppSettings>): void {
 
 function patchBackground(patch: Partial<AppSettings['background']>): void {
   emit('change', { background: { ...props.settings.background, ...patch } });
+}
+
+/* ---------------- 背景的「即时预览 + 合并落盘」 ---------------- */
+
+let commitTimer: number | null = null;
+let pendingBackground: Partial<BackgroundConfig> = {};
+
+/**
+ * 取色器与滑块的变更入口。
+ *
+ * NColorPicker 是受控用法（传了 :value），它的 complete 事件读的是内部的
+ * mergedValueRef —— 受控模式下那就是 props.value，也就是**变更前的旧颜色**，
+ * 所以只能监听 update:value。而 update:value 会在拖动时随每一次 mousemove 触发，
+ * 全部直写存储会让每一帧都「序列化整份配置 + 写 storage」，因此这里先画到
+ * CSS 变量上做即时预览，停手 250ms 后再合并成一次写入。
+ */
+function stageBackground(patch: Partial<BackgroundConfig>): void {
+  pendingBackground = { ...pendingBackground, ...patch };
+  previewBackground(props.settings, pendingBackground);
+  if (commitTimer !== null) window.clearTimeout(commitTimer);
+  commitTimer = window.setTimeout(flushBackground, BACKGROUND_COMMIT_DELAY);
+}
+
+/** 立即提交挂起的背景变更（关闭面板、卸载、上传或移除图片前都要先调用） */
+function flushBackground(): void {
+  if (commitTimer !== null) {
+    window.clearTimeout(commitTimer);
+    commitTimer = null;
+  }
+  const patch = pendingBackground;
+  pendingBackground = {};
+  if (Object.keys(patch).length > 0) patchBackground(patch);
 }
 
 /* ---------------- 单选组守卫：参数取 update:value 的宽类型，字面量判等后收窄 ---------------- */
@@ -162,8 +223,78 @@ function onOpenModeChange(value: string | number): void {
 
 function onBgTypeChange(value: string | number): void {
   if (value === 'solid' || value === 'gradient' || value === 'image') {
+    flushBackground();
     patchBackground({ type: value });
   }
+}
+
+/* ---------------- 颜色与滑块 ---------------- */
+
+function onBackgroundColorChange(value: string | null): void {
+  if (typeof value === 'string' && value) stageBackground({ color: value });
+}
+
+function onGradientFromChange(value: string | null): void {
+  if (typeof value === 'string' && value) stageBackground({ gradientFrom: value });
+}
+
+function onGradientToChange(value: string | null): void {
+  if (typeof value === 'string' && value) stageBackground({ gradientTo: value });
+}
+
+function onPanelOpacityChange(value: number): void {
+  stageBackground({ panelOpacity: value });
+}
+
+function onRadiusChange(value: number): void {
+  stageBackground({ radius: value });
+}
+
+/* ---------------- 背景图片 ---------------- */
+
+function pickBgImage(): void {
+  bgUploadError.value = '';
+  bgFileInput.value?.click();
+}
+
+async function onBgFileChange(event: Event): Promise<void> {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0] ?? null;
+  // 清空 value，否则再次选择同一个文件不会触发 change
+  input.value = '';
+  if (!file) return;
+
+  bgUploading.value = true;
+  const result = await fileToBackgroundDataUrl(file);
+  bgUploading.value = false;
+
+  if (!result.ok) {
+    bgUploadError.value = result.message;
+    return;
+  }
+
+  bgUploadError.value = '';
+  bgImageUrl.value = '';
+  flushBackground(); // 先落盘挂起的改动，避免与这次上传相互覆盖
+  patchBackground({ imageUrl: result.dataUrl, type: 'image' });
+}
+
+function clearBgImage(): void {
+  bgUploadError.value = '';
+  bgImageUrl.value = '';
+  flushBackground();
+  patchBackground({ imageUrl: '' });
+}
+
+/** 背景图片地址：失焦 / 回车提交，同时把背景类型切到图片 */
+function onBgImageChange(value: string): void {
+  const next = value.trim();
+  bgImageUrl.value = next;
+  // 「已上传本地图片」时输入框是空的，别让一次失焦把上传的图清掉
+  if (!next && isUploadedBackground(props.settings.background)) return;
+  if (next === props.settings.background.imageUrl) return;
+  flushBackground();
+  patchBackground({ imageUrl: next, type: 'image' });
 }
 
 function onEngineChange(value: string | number | null): void {
@@ -172,11 +303,6 @@ function onEngineChange(value: string | number | null): void {
   }
 }
 
-/** 背景图片地址：失焦 / 回车提交，同时把背景类型切到图片 */
-function onBgImageChange(value: string): void {
-  bgImageUrl.value = value;
-  patchBackground({ imageUrl: value, type: 'image' });
-}
 </script>
 
 <template>
@@ -202,18 +328,21 @@ function onBgImageChange(value: string): void {
           </div>
           <NRadioGroup
             size="small"
+            class="setting-icon-group"
             :value="settings.theme"
             data-testid="setting-theme"
             @update:value="onThemeChange"
           >
+            <!-- 只留图标：文字标签与图标语义重复，悬停提示承担可读性 -->
             <NRadioButton
               v-for="option in themeOptions"
               :key="option.value"
               :value="option.value"
+              :title="option.label"
+              :aria-label="option.label"
               :data-testid="`setting-theme-${option.value}`"
             >
               <SvgIcon :name="option.icon" :size="14" />
-              <span class="setting-radio-label">{{ option.label }}</span>
             </NRadioButton>
           </NRadioGroup>
         </div>
@@ -225,6 +354,7 @@ function onBgImageChange(value: string): void {
           </div>
           <NRadioGroup
             size="small"
+            class="setting-icon-group"
             :value="settings.sidebarPosition"
             data-testid="setting-sidebar"
             @update:value="onSidebarChange"
@@ -233,10 +363,11 @@ function onBgImageChange(value: string): void {
               v-for="option in sidebarPositionOptions"
               :key="option.value"
               :value="option.value"
+              :title="option.label"
+              :aria-label="option.label"
               :data-testid="`setting-sidebar-${option.value}`"
             >
               <SvgIcon :name="option.icon" :size="14" />
-              <span class="setting-radio-label">{{ option.label }}</span>
             </NRadioButton>
           </NRadioGroup>
         </div>
@@ -266,7 +397,7 @@ function onBgImageChange(value: string): void {
         <div class="setting-row">
           <div class="setting-row__text">
             <span class="setting-row__label">显示网站描述</span>
-            <span class="setting-row__hint">关闭后卡片只显示名称与域名，信息更紧凑</span>
+            <span class="setting-row__hint">关闭后条目只显示名称与域名，信息更紧凑</span>
           </div>
           <NSwitch
             size="small"
@@ -275,6 +406,24 @@ function onBgImageChange(value: string): void {
             @update:value="(value: boolean) => patchSettings({ showDescription: value })"
           />
         </div>
+
+        <div class="setting-row">
+          <div class="setting-row__text">
+            <span class="setting-row__label">自动隐藏侧边栏</span>
+            <span class="setting-row__hint">
+              默认常驻显示；开启后鼠标靠近屏幕{{
+                settings.sidebarPosition === 'right' ? '右' : '左'
+              }}缘时悬浮呼出，移开后收回，页面更完整
+            </span>
+          </div>
+          <NSwitch
+            size="small"
+            :value="settings.sidebarAutoHide"
+            data-testid="setting-switch-sidebarautohide"
+            @update:value="(value: boolean) => patchSettings({ sidebarAutoHide: value })"
+          />
+        </div>
+
       </NTabPane>
 
       <!-- 背景与样式 -->
@@ -309,7 +458,7 @@ function onBgImageChange(value: string): void {
             :show-alpha="false"
             :value="settings.background.color"
             data-testid="setting-color-bg"
-            @complete="(value: string) => patchBackground({ color: value })"
+            @update:value="onBackgroundColorChange"
           />
         </div>
 
@@ -324,29 +473,68 @@ function onBgImageChange(value: string): void {
               :show-alpha="false"
               :value="settings.background.gradientFrom"
               data-testid="setting-color-gradientfrom"
-              @complete="(value: string) => patchBackground({ gradientFrom: value })"
+              @update:value="onGradientFromChange"
             />
             <NColorPicker
               :modes="['hex']"
               :show-alpha="false"
               :value="settings.background.gradientTo"
               data-testid="setting-color-gradientto"
-              @complete="(value: string) => patchBackground({ gradientTo: value })"
+              @update:value="onGradientToChange"
             />
           </div>
         </div>
 
         <div v-else class="setting-block">
-          <span class="setting-row__label">背景图片地址</span>
+          <span class="setting-row__label">背景图片</span>
+
+          <input
+            ref="bgFileInput"
+            class="sr-only"
+            type="file"
+            accept="image/png,image/jpeg,image/webp,image/gif,image/bmp"
+            aria-label="选择背景图片文件"
+            @change="onBgFileChange"
+          />
+
+          <div class="setting-bg-actions">
+            <NButton
+              size="small"
+              :loading="bgUploading"
+              data-testid="setting-bgimage-upload"
+              @click="pickBgImage"
+            >
+              <SvgIcon name="upload" :size="15" />
+              上传本地图片
+            </NButton>
+            <NButton
+              v-if="settings.background.imageUrl"
+              size="small"
+              secondary
+              data-testid="setting-bgimage-clear"
+              @click="clearBgImage"
+            >
+              <SvgIcon name="trash" :size="15" />
+              移除图片
+            </NButton>
+          </div>
+
+          <p v-if="bgUploadError" class="setting-row__error">{{ bgUploadError }}</p>
+
+          <div v-if="settings.background.imageUrl" class="setting-bg-preview">
+            <img :src="settings.background.imageUrl" alt="当前背景图预览" />
+            <span class="setting-row__hint">{{ bgImageSourceText }}</span>
+          </div>
+
           <NInput
             v-model:value="bgImageUrl"
             size="small"
-            placeholder="https://example.com/bg.jpg（仅支持 http(s) 或 data:image）"
+            placeholder="或粘贴图片地址 https://example.com/bg.jpg"
             data-testid="setting-bgimage-url"
             @change="onBgImageChange"
           />
           <span class="setting-row__hint">
-            使用远程图片会在打开新标签页时请求该地址，请自行确认可信；留空则不加载任何图片。
+            上传的图片会等比压缩后存在本地配置里，不经过任何服务器；粘贴远程地址则在每次打开新标签页时请求一次，请自行确认可信。
           </span>
         </div>
 
@@ -361,7 +549,7 @@ function onBgImageChange(value: string): void {
             :value="settings.background.panelOpacity"
             :format-tooltip="(value: number) => `${Math.round(value * 100)}%`"
             data-testid="setting-slider-panelopacity"
-            @update:value="(value: number) => patchBackground({ panelOpacity: value })"
+            @update:value="onPanelOpacityChange"
           />
         </div>
 
@@ -374,7 +562,7 @@ function onBgImageChange(value: string): void {
             :value="settings.background.radius"
             :format-tooltip="(value: number) => `${value} px`"
             data-testid="setting-slider-radius"
-            @update:value="(value: number) => patchBackground({ radius: value })"
+            @update:value="onRadiusChange"
           />
         </div>
       </NTabPane>
@@ -444,19 +632,6 @@ function onBgImageChange(value: string): void {
 
         <div class="setting-row">
           <div class="setting-row__text">
-            <span class="setting-row__label">记录最近访问</span>
-            <span class="setting-row__hint">只记录从本扩展打开的网站，不采集浏览器历史</span>
-          </div>
-          <NSwitch
-            size="small"
-            :value="settings.recentVisitsEnabled"
-            data-testid="setting-switch-recent"
-            @update:value="(value: boolean) => patchSettings({ recentVisitsEnabled: value })"
-          />
-        </div>
-
-        <div class="setting-row">
-          <div class="setting-row__text">
             <span class="setting-row__label">记录搜索历史</span>
             <span class="setting-row__hint">仅保存在本地，可随时清空</span>
           </div>
@@ -480,19 +655,6 @@ function onBgImageChange(value: string): void {
             @update:value="(value: boolean) => patchSettings({ remoteFavicon: value })"
           />
         </div>
-
-        <div class="setting-block">
-          <span class="setting-row__label">最近访问保留条数：{{ settings.recentVisitsLimit }}</span>
-          <NSlider
-            :min="5"
-            :max="100"
-            :step="5"
-            :value="settings.recentVisitsLimit"
-            :format-tooltip="(value: number) => `${value} 条`"
-            data-testid="setting-slider-recentlimit"
-            @update:value="(value: number) => patchSettings({ recentVisitsLimit: value })"
-          />
-        </div>
       </NTabPane>
 
       <!-- 数据管理 -->
@@ -501,7 +663,6 @@ function onBgImageChange(value: string): void {
           <NStatistic label="导航页面" :value="stats.pages" />
           <NStatistic label="分区" :value="stats.sections" />
           <NStatistic label="网站" :value="stats.websites" />
-          <NStatistic label="最近访问" :value="stats.recentVisits" />
         </div>
 
         <p class="setting-row__hint">
@@ -513,14 +674,7 @@ function onBgImageChange(value: string): void {
         </NAlert>
 
         <h4 class="settings-subtitle">导出配置</h4>
-        <div class="setting-row">
-          <div class="setting-row__text">
-            <span class="setting-row__label">同时导出最近访问记录</span>
-            <span class="setting-row__hint">最近访问包含你打开过的网站地址，默认不导出</span>
-          </div>
-          <NSwitch v-model:value="exportRecent" size="small" data-testid="setting-switch-exportrecent" />
-        </div>
-        <NButton size="small" data-testid="setting-export" @click="emit('export', { includeRecentVisits: exportRecent })">
+        <NButton size="small" data-testid="setting-export" @click="emit('export')">
           <SvgIcon name="download" :size="15" />
           导出为 JSON 文件
         </NButton>
@@ -536,10 +690,6 @@ function onBgImageChange(value: string): void {
 
         <h4 class="settings-subtitle">清理与重置</h4>
         <div class="settings-danger-zone">
-          <NButton size="small" secondary data-testid="setting-action-clearrecent" @click="emit('clear-recent')">
-            <SvgIcon name="history" :size="15" />
-            清空最近访问
-          </NButton>
           <NButton size="small" secondary data-testid="setting-action-clearsearch" @click="emit('clear-search-history')">
             <SvgIcon name="search" :size="15" />
             清空搜索历史
@@ -605,8 +755,48 @@ function onBgImageChange(value: string): void {
   line-height: 1.5;
 }
 
-.setting-radio-label {
-  margin-left: 4px;
+.setting-row__error {
+  color: var(--color-danger);
+  font-size: var(--font-sm);
+  line-height: 1.5;
+}
+
+/*
+ * 纯图标单选按钮（主题模式 / 导航栏位置）的垂直居中。
+ *
+ * .n-radio-button 是 inline-block + line-height 28px，内部 .n-radio__label 靠
+ * **文字行盒**撑满按钮高度；图标按钮里的 <svg> 是 display: block，不产生行盒，
+ * label 高度便塌成图标自身的 14px，于是图标贴到按钮上沿（实测偏上 6.2px）。
+ * 这里显式按按钮高度居中。--n-height 由 Naive 定义在 .n-radio-button 上并继承下来。
+ */
+.setting-icon-group :deep(.n-radio__label) {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: var(--n-height, 28px);
+  line-height: 1;
+}
+
+/* 背景图：操作按钮、缩略图预览各自成行，避免和右侧控件抢宽度 */
+.setting-bg-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.setting-bg-preview {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.setting-bg-preview img {
+  width: 132px;
+  height: 74px;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+  flex: none;
 }
 
 .setting-colors {

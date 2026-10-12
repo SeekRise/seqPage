@@ -85,7 +85,7 @@ export function validateImportText(text: string): ImportValidation {
   };
 
   if (!text.trim()) {
-    return { ...emptyResult, message: '文件内容为空，请选择由 My Navi 导出的 JSON 备份文件。' };
+    return { ...emptyResult, message: '文件内容为空，请选择由 SeqPage 导出的 JSON 备份文件。' };
   }
 
   // 文件体积按字符数近似判断（UTF-8 中文最多 3 字节/字符，这里保守估计）
@@ -115,7 +115,7 @@ export function validateImportText(text: string): ImportValidation {
   if (isWrapped && typeof parsed.app === 'string' && parsed.app !== 'my-navi') {
     return {
       ...emptyResult,
-      message: `该文件来自「${parsed.app}」，不是 My Navi 的备份文件，已取消导入。`,
+      message: `该文件来自「${parsed.app}」，不是 SeqPage 的备份文件，已取消导入。`,
     };
   }
 
@@ -125,7 +125,7 @@ export function validateImportText(text: string): ImportValidation {
   if (fileVersion > SCHEMA_VERSION) {
     return {
       ...emptyResult,
-      message: `备份文件的配置版本为 v${fileVersion}，高于当前扩展支持的 v${SCHEMA_VERSION}。请先升级 My Navi 后再导入。`,
+      message: `备份文件的配置版本为 v${fileVersion}，高于当前扩展支持的 v${SCHEMA_VERSION}。请先升级 SeqPage 后再导入。`,
     };
   }
   if (fileVersion === 0) {

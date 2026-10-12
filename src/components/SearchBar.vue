@@ -24,14 +24,11 @@ const props = defineProps<{
   defaultEngineId: string;
   /** 是否启用搜索历史 */
   historyEnabled: boolean;
-  /** 是否启用快捷键提示 */
-  shortcutsEnabled: boolean;
 }>();
 
 const emit = defineEmits<{
   open: [websiteId: string];
   search: [payload: { query: string; engineId: string }];
-  'quick-add': [];
 }>();
 
 const { items: historyItems, load: loadHistory, remove: removeHistory, clear: clearHistory } = useSearchHistory();
@@ -210,7 +207,12 @@ defineExpose({ focus });
         :aria-expanded="engineMenuOpen"
         @click="engineMenuOpen = !engineMenuOpen"
       >
-        <span class="search-bar__engine-icon">{{ engine.icon }}</span>
+        <span
+          class="search-bar__engine-icon"
+          :style="engine.color ? { color: engine.color } : undefined"
+        >
+          <SvgIcon :name="engine.icon" filled :size="15" />
+        </span>
         <span class="search-bar__engine-name">{{ engine.name }}</span>
         <SvgIcon name="chevronDown" :size="14" />
       </button>
@@ -255,15 +257,10 @@ defineExpose({ focus });
         <span class="search-bar__submit-text">搜索</span>
       </button>
 
-      <button
-        type="button"
-        class="icon-btn search-bar__quick-add"
-        title="快捷添加当前网页"
-        aria-label="快捷添加当前网页"
-        @click="emit('quick-add')"
-      >
-        <SvgIcon name="plus" :size="16" />
-      </button>
+      <!--
+        这里原本有一个「快捷添加当前网页」的 + 按钮，但它与顶部「添加 → 添加网站」
+        调用的完全是同一个方法，属于同一功能的重复入口，故移除。
+      -->
 
       <div v-if="engineMenuOpen" class="search-bar__menu" role="menu" aria-label="搜索引擎">
         <button
@@ -276,7 +273,12 @@ defineExpose({ focus });
           :aria-checked="item.id === engineId"
           @click="pickEngine(item.id)"
         >
-          <span class="search-bar__menu-icon">{{ item.icon }}</span>
+          <span
+            class="search-bar__menu-icon"
+            :style="item.color ? { color: item.color } : undefined"
+          >
+            <SvgIcon :name="item.icon" filled :size="15" />
+          </span>
           <span class="search-bar__menu-label">{{ item.name }}</span>
           <span v-if="item.keyword" class="search-bar__menu-hint">{{ item.keyword }}</span>
           <SvgIcon v-if="item.id === engineId" name="check" :size="14" />
@@ -284,9 +286,11 @@ defineExpose({ focus });
       </div>
     </div>
 
-    <p v-if="shortcutsEnabled" class="search-bar__hint">
-      快捷键：<kbd>Ctrl</kbd>+<kbd>K</kbd> 聚焦搜索 · <kbd>/</kbd> 聚焦搜索 · <kbd>Esc</kbd> 清空 · <kbd>Ctrl</kbd>+<kbd>B</kbd> 显示/隐藏导航栏
-    </p>
+    <!--
+      这里原本有一条快捷键提示行，但它会把搜索栏撑到 74px，
+      塞不进 56px 的顶部工具栏（会上下溢出、压到内容区）。
+      快捷键说明已集中写在设置面板的「启用键盘快捷键」一行，故此处不再重复。
+    -->
 
     <!-- 搜索历史 -->
     <div v-if="hasDropdown" class="search-bar__panel" role="listbox" aria-label="搜索历史">
@@ -368,7 +372,12 @@ defineExpose({ focus });
       </p>
 
       <button type="button" class="search-bar__row search-bar__row--primary" @click="submitSearch">
-        <span class="search-bar__row-engine">{{ engine.icon }}</span>
+        <span
+          class="search-bar__row-engine"
+          :style="engine.color ? { color: engine.color } : undefined"
+        >
+          <SvgIcon :name="engine.icon" filled :size="14" />
+        </span>
         <span class="search-bar__row-title ellipsis">
           用 {{ engine.name }} 搜索「{{ trimmedKeyword }}」
         </span>
@@ -382,31 +391,37 @@ defineExpose({ focus });
 .search-bar {
   position: relative;
   width: 100%;
-  max-width: 720px;
+  max-width: var(--search-max-width);
 }
 
+/*
+ * 搜索框：顶栏与页面同色融合后，用品牌色边框让它成为顶部最醒目的元素。
+ * 默认 brand-400 边框 + 轻阴影；聚焦时加深到 brand-500。
+ */
 .search-bar__box {
   display: flex;
   align-items: center;
   gap: var(--space-1);
-  padding: 6px 6px 6px var(--space-2);
+  height: var(--search-height);
+  padding: 0 6px 0 var(--space-2);
   background: var(--bg-panel);
-  border: 1px solid var(--border-color);
+  border: 1.5px solid var(--brand-400);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-xs);
+  box-shadow: var(--shadow-sm);
   transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
 }
 
 .search-bar__box:focus-within {
-  border-color: var(--brand-400);
-  box-shadow: var(--shadow-sm);
+  border-color: var(--brand-500);
+  box-shadow: var(--shadow-md);
 }
 
 .search-bar__engine {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 6px var(--space-2);
+  height: 30px;
+  padding: 0 var(--space-2);
   border-radius: var(--radius-sm);
   color: var(--text-secondary);
   font-size: var(--font-sm);
@@ -417,9 +432,10 @@ defineExpose({ focus });
   color: var(--text-primary);
 }
 
+/* 品牌图标容器：颜色由内联品牌色或继承文字色决定 */
 .search-bar__engine-icon {
-  font-size: 15px;
-  line-height: 1;
+  display: flex;
+  align-items: center;
 }
 
 .search-bar__engine-name {
@@ -439,9 +455,10 @@ defineExpose({ focus });
 .search-bar__input {
   flex: 1;
   min-width: 0;
+  height: 100%;
   border: none;
   background: transparent;
-  padding: 6px var(--space-2);
+  padding: 0 var(--space-2);
   font-size: var(--font-base);
   outline: none;
 }
@@ -459,32 +476,6 @@ defineExpose({ focus });
   flex: none;
 }
 
-.search-bar__quick-add {
-  width: 30px;
-  height: 30px;
-  flex: none;
-}
-
-.search-bar__hint {
-  margin-top: 6px;
-  font-size: var(--font-xs);
-  color: var(--text-tertiary);
-}
-
-.search-bar__hint kbd {
-  display: inline-block;
-  padding: 0 4px;
-  min-width: 16px;
-  text-align: center;
-  font-family: inherit;
-  font-size: 10px;
-  line-height: 16px;
-  background: var(--bg-subtle);
-  border: 1px solid var(--border-color);
-  border-bottom-width: 2px;
-  border-radius: var(--radius-xs);
-  color: var(--text-secondary);
-}
 
 .search-bar__menu {
   position: absolute;
@@ -520,8 +511,8 @@ defineExpose({ focus });
 }
 
 .search-bar__menu-icon {
-  font-size: 15px;
-  line-height: 1;
+  display: flex;
+  align-items: center;
 }
 
 .search-bar__menu-label {

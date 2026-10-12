@@ -1,5 +1,5 @@
 /**
- * My Navi 入口
+ * SeqPage 入口
  *
  * 职责：
  * 1. 在挂载前完成 store 初始化（读取本地配置 / 首次写入演示数据）。
@@ -51,7 +51,6 @@ function exposeDiagnostics(): void {
         await push('addPage', () => store.addPage({ name: '__probe__', icon: 'grid' }));
         // 不带 force 的整体覆盖：用于验证只读保护默认拒绝写入
         await push('replaceStateNotForced', () => store.replaceState(store.snapshot()));
-        await push('clearRecentVisits', () => store.clearRecentVisits());
         return results;
       },
       forceClear: () => store.clearNavigationData(),
@@ -65,7 +64,7 @@ async function bootstrap(): Promise<void> {
   const app = createApp(App);
 
   app.config.errorHandler = (error, _instance, info) => {
-    console.error('[My Navi] 渲染异常：', error, info);
+    console.error('[SeqPage] 渲染异常：', error, info);
     toast.error(
       '界面渲染出现异常，部分内容可能未正确显示。',
       error instanceof Error ? `${error.message}（${info}）` : String(error),
@@ -83,10 +82,10 @@ async function bootstrap(): Promise<void> {
 }
 
 void bootstrap().catch((error: unknown) => {
-  console.error('[My Navi] 启动失败：', error);
+  console.error('[SeqPage] 启动失败：', error);
   const container = document.getElementById('app');
   if (container) {
     container.textContent =
-      'My Navi 启动失败。请在 chrome://extensions 中重新加载扩展；若问题持续，请检查浏览器控制台的错误信息。';
+      'SeqPage 启动失败。请在 chrome://extensions 中重新加载扩展；若问题持续，请检查浏览器控制台的错误信息。';
   }
 });

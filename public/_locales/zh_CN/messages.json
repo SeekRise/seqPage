@@ -1,6 +1,6 @@
 {
   "extName": {
-    "message": "My Navi - 新标签页导航工作台",
+    "message": "SeqPage",
     "description": "扩展名称"
   },
   "extDescription": {
@@ -8,7 +8,7 @@
     "description": "扩展描述"
   },
   "actionTitle": {
-    "message": "My Navi - 打开导航工作台",
+    "message": "SeqPage - 打开导航工作台",
     "description": "工具栏图标提示"
   }
 }

@@ -11,9 +11,7 @@ import { NConfigProvider, zhCN } from 'naive-ui';
 import BatchActionBar from '@/components/BatchActionBar.vue';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import ContextMenu from '@/components/ContextMenu.vue';
-import FavoritesRecentPanel from '@/components/FavoritesRecentPanel.vue';
 import PageForm from '@/components/PageForm.vue';
-import PageManagerModal from '@/components/PageManagerModal.vue';
 import SearchBar from '@/components/SearchBar.vue';
 import SectionForm from '@/components/SectionForm.vue';
 import SectionPanel from '@/components/SectionPanel.vue';
@@ -25,7 +23,6 @@ import WebsiteCard from '@/components/WebsiteCard.vue';
 import WebsiteForm from '@/components/WebsiteForm.vue';
 import { confirmAction } from '@/composables/useConfirm';
 import { closeContextMenu, openContextMenu } from '@/composables/useContextMenu';
-import { useCurrentPage } from '@/composables/useCurrentPage';
 import { useSearchHistory } from '@/composables/useSearchHistory';
 import { useSortable } from '@/composables/useSortable';
 import { useNaiveTheme } from '@/composables/useNaiveTheme';
@@ -42,7 +39,7 @@ import {
 import { describeIntegrityReport, hasIntegrityIssues } from '@/services/navigation';
 import { store } from '@/services/store';
 import type { AppSettings, ContextMenuItem, NavigationPage, Section, Website } from '@/types';
-import { buildSearchUrl, findSearchEngine } from '@/utils/constants';
+import { CREATION_LIMITS, buildSearchUrl, findSearchEngine } from '@/utils/constants';
 import { openUrl } from '@/utils/url';
 
 /* ------------------------------------------------------------------ *
@@ -71,19 +68,6 @@ const websiteCounts = computed<Record<string, number>>(() => {
   return result;
 });
 
-const favorites = computed(() =>
-  allWebsites.value
-    .filter((website) => website.favorite)
-    .map((website) => ({
-      website,
-      pageName: store.pageById(website.pageId)?.name ?? '未知页面',
-      sectionName: store.sectionById(website.sectionId)?.name ?? '未知分区',
-    })),
-);
-
-const recentVisits = computed(() => store.recentVisits());
-const existingWebsiteIds = computed(() => allWebsites.value.map((website) => website.id));
-
 const integrityMessage = computed(() => {
   const report = store.state.integrity;
   if (!report || !hasIntegrityIssues(report)) return null;
@@ -94,12 +78,9 @@ const integrityMessage = computed(() => {
  * 界面状态
  * ------------------------------------------------------------------ */
 
-const sidebarCollapsed = ref(false);
 const batchMode = ref(false);
 const selectedIds = ref<string[]>([]);
 const settingsOpen = ref(false);
-const pageManagerOpen = ref(false);
-const favoritesOpen = ref(false);
 const usage = ref<{ bytes: number; quotaBytes: number } | null>(null);
 const creatingPage = ref(false);
 
@@ -124,7 +105,6 @@ const websitePrefill = ref<{ name: string; url: string } | null>(null);
 const importInput = ref<HTMLInputElement | null>(null);
 const busy = ref(false);
 
-const { readCurrentPage } = useCurrentPage();
 const { clear: clearSearchHistory } = useSearchHistory();
 
 useAppearance(settings);
@@ -139,9 +119,7 @@ async function openWebsite(website: Website, forceNewTab?: boolean): Promise<voi
   const ok = await openUrl(website.url, newTab);
   if (!ok) {
     toast.error('无法打开该网站', '地址协议不被允许（仅支持 http/https），请在编辑中修正。');
-    return;
   }
-  store.recordVisit(website);
 }
 
 function openWebsiteById(id: string): void {
@@ -151,13 +129,6 @@ function openWebsiteById(id: string): void {
     return;
   }
   void openWebsite(website);
-}
-
-async function openVisitUrl(url: string, name: string): Promise<void> {
-  const ok = await openUrl(url, true);
-  if (!ok) {
-    toast.error(`无法打开「${name}」`, '记录的地址已不再合法，可清空最近访问记录。');
-  }
 }
 
 async function handleSearch(payload: { query: string; engineId: string }): Promise<void> {
@@ -186,7 +157,6 @@ function requestCreatePage(): void {
   creatingPage.value = true;
   editingPage.value = null;
   pageFormOpen.value = true;
-  if (pageManagerOpen.value) pageManagerOpen.value = false;
 }
 
 function requestEditPage(page: NavigationPage): void {
@@ -264,7 +234,26 @@ async function movePage(page: NavigationPage, direction: -1 | 1): Promise<void> 
  * 分区操作
  * ------------------------------------------------------------------ */
 
-function requestCreateSection(): void {
+/**
+ * 新建分区。
+ *
+ * 传 pageId 用于「在侧栏右键某个页面 → 新建分区」：先切到目标页面再弹表单，
+ * 建完立刻能看到结果（与「新建页面后自动切换」是同一套约定）。
+ * 注意模板里必须写成 `requestCreateSection()`——直接写方法名会把 MouseEvent 当成 pageId。
+ */
+async function requestCreateSection(pageId?: string): Promise<void> {
+  // 容错：模板里漏写括号（`@click="requestCreateSection"`）会把 MouseEvent 传进来
+  const target = typeof pageId === 'string' && pageId ? pageId : store.state.activePageId;
+  if (store.sectionCount(target) >= CREATION_LIMITS.maxSectionsPerPage) {
+    toast.error(
+      '无法新建分区',
+      `每个导航页面最多 ${CREATION_LIMITS.maxSectionsPerPage} 个分区，请先删除一个再新建。`,
+    );
+    return;
+  }
+  if (target && target !== store.state.activePageId) {
+    await selectPage(target);
+  }
   editingSection.value = null;
   sectionFormOpen.value = true;
 }
@@ -416,6 +405,13 @@ async function moveSection(section: Section, direction: -1 | 1): Promise<void> {
  * ------------------------------------------------------------------ */
 
 function requestCreateWebsite(section: Section): void {
+  if (store.websitesOfSection(section.id).length >= CREATION_LIMITS.maxWebsitesPerSection) {
+    toast.error(
+      '无法添加网站',
+      `每个分区最多 ${CREATION_LIMITS.maxWebsitesPerSection} 个网站，请先删除或移走一些。`,
+    );
+    return;
+  }
   editingWebsite.value = null;
   websiteFormSectionId.value = section.id;
   websitePrefill.value = null;
@@ -426,31 +422,6 @@ function requestEditWebsite(website: Website): void {
   editingWebsite.value = website;
   websiteFormSectionId.value = website.sectionId;
   websitePrefill.value = null;
-  websiteFormOpen.value = true;
-}
-
-/** 快捷添加当前网页 */
-async function quickAddCurrentPage(): Promise<void> {
-  const result = await readCurrentPage();
-  if (!result.ok || !result.page) {
-    toast.warning('无法读取当前网页', result.message);
-    // 仍然打开表单，让用户手动填写，避免"点了没反应"
-    editingWebsite.value = null;
-    websiteFormSectionId.value = sections.value[0]?.id ?? '';
-    websitePrefill.value = null;
-    websiteFormOpen.value = true;
-    return;
-  }
-
-  if (sections.value.length === 0) {
-    toast.warning('当前页面还没有分区', '请先创建一个分区，然后再添加网站。');
-    requestCreateSection();
-    return;
-  }
-
-  editingWebsite.value = null;
-  websiteFormSectionId.value = sections.value[0]?.id ?? '';
-  websitePrefill.value = { name: result.page.title, url: result.page.url };
   websiteFormOpen.value = true;
 }
 
@@ -544,11 +515,6 @@ async function moveWebsite(website: Website): Promise<void> {
   } else {
     toast.error('移动失败', result.message);
   }
-}
-
-async function toggleFavoriteFromPanel(payload: { websiteId: string; favorite: boolean }): Promise<void> {
-  const result = await store.setFavorite([payload.websiteId], payload.favorite);
-  if (!result.ok) toast.error('更新收藏状态失败', result.message);
 }
 
 async function copyUrl(url: string, name: string): Promise<void> {
@@ -704,12 +670,31 @@ function websiteMenuItems(website: Website): ContextMenuItem[] {
 }
 
 function sectionMenuItems(section: Section): ContextMenuItem[] {
+  const websiteCount = store.websitesOfSection(section.id).length;
+  const sectionCount = store.sectionCount(section.pageId);
   return [
     {
       id: 'add',
       label: '添加网站',
       icon: 'plus',
+      disabled: websiteCount >= CREATION_LIMITS.maxWebsitesPerSection,
+      hint:
+        websiteCount >= CREATION_LIMITS.maxWebsitesPerSection
+          ? `每区最多 ${CREATION_LIMITS.maxWebsitesPerSection} 个`
+          : undefined,
       onSelect: () => requestCreateWebsite(section),
+    },
+    {
+      // 顶栏「添加」菜单移除后，非空页面的新建分区入口收敛到这里（右键 + 更多菜单共用）
+      id: 'create-section',
+      label: '新建分区',
+      icon: 'grid',
+      disabled: sectionCount >= CREATION_LIMITS.maxSectionsPerPage,
+      hint:
+        sectionCount >= CREATION_LIMITS.maxSectionsPerPage
+          ? `每页最多 ${CREATION_LIMITS.maxSectionsPerPage} 个`
+          : undefined,
+      onSelect: () => void requestCreateSection(),
     },
     { id: 'edit', label: '编辑分区', icon: 'pencil', onSelect: () => requestEditSection(section) },
     {
@@ -744,8 +729,21 @@ function sectionMenuItems(section: Section): ContextMenuItem[] {
 
 function pageMenuItems(page: NavigationPage): ContextMenuItem[] {
   const index = pages.value.findIndex((item) => item.id === page.id);
+  const sectionCount = sectionCounts.value[page.id] ?? 0;
   return [
     { id: 'create', label: '新建页面', icon: 'plus', onSelect: requestCreatePage },
+    {
+      // 侧栏任意页面都能就地新建分区：目标页面此时可能不是当前页，交给 requestCreateSection 切过去
+      id: 'create-section',
+      label: '新建分区',
+      icon: 'grid',
+      disabled: sectionCount >= CREATION_LIMITS.maxSectionsPerPage,
+      hint:
+        sectionCount >= CREATION_LIMITS.maxSectionsPerPage
+          ? `每页最多 ${CREATION_LIMITS.maxSectionsPerPage} 个分区`
+          : undefined,
+      onSelect: () => void requestCreateSection(page.id),
+    },
     { id: 'edit', label: '重命名 / 修改图标', icon: 'pencil', onSelect: () => requestEditPage(page) },
     { id: 'd1', label: '', divider: true },
     {
@@ -761,14 +759,6 @@ function pageMenuItems(page: NavigationPage): ContextMenuItem[] {
       icon: 'chevronDown',
       disabled: index >= pages.value.length - 1,
       onSelect: () => void movePage(page, 1),
-    },
-    {
-      id: 'manage',
-      label: '进入页面管理',
-      icon: 'layers',
-      onSelect: () => {
-        pageManagerOpen.value = true;
-      },
     },
     { id: 'd2', label: '', divider: true },
     {
@@ -844,12 +834,12 @@ async function openSettings(): Promise<void> {
   await refreshUsage();
 }
 
-async function exportConfig(options: { includeRecentVisits: boolean }): Promise<void> {
-  const payload = createExportPayload(store.snapshot(), options);
+async function exportConfig(): Promise<void> {
+  const payload = createExportPayload(store.snapshot(), { includeRecentVisits: false });
   const text = serializeExport(payload);
   downloadJson(defaultExportFilename(), text);
   toast.success(
-    options.includeRecentVisits ? '已导出完整配置（含最近访问记录）。' : '已导出配置（不含最近访问记录）。',
+    '已导出配置。',
     `共 ${payload.data.pages.length} 个页面、${payload.data.websites.length} 个网站。`,
   );
 }
@@ -942,18 +932,6 @@ async function clearAllData(): Promise<void> {
   }
 }
 
-async function clearRecentVisits(): Promise<void> {
-  const choice = await confirmAction({
-    title: '清空最近访问记录',
-    message: `将删除 ${recentVisits.value.length} 条最近访问记录，不影响网站卡片本身。`,
-    confirmText: '清空记录',
-  });
-  if (choice !== 'confirm') return;
-  const result = await store.clearRecentVisits();
-  if (result.ok) toast.success('最近访问记录已清空。');
-  else toast.error('清空失败', result.message);
-}
-
 async function clearAllSearchHistory(): Promise<void> {
   const choice = await confirmAction({
     title: '清空搜索历史',
@@ -966,7 +944,111 @@ async function clearAllSearchHistory(): Promise<void> {
 }
 
 async function selectPage(pageId: string): Promise<void> {
+  // 常规入口（侧栏点击等）无方向语义，用淡入淡出
+  pageTransition.value = 'page-fade';
   await store.setActivePage(pageId);
+}
+
+/** 滚轮切换：带方向感的过渡（下一页自下而上进入，上一页反向） */
+async function switchPage(pageId: string, direction: 'forward' | 'back'): Promise<void> {
+  pageTransition.value = direction === 'forward' ? 'page-forward' : 'page-back';
+  await store.setActivePage(pageId);
+}
+
+/* ------------------------------------------------------------------ *
+ * 侧边栏自动隐藏
+ * ------------------------------------------------------------------ */
+
+/**
+ * 侧边栏只有两种形态，永远不存在「彻底消失」的状态：
+ * - sidebarAutoHide=false：常驻显示（占据布局宽度）；
+ * - sidebarAutoHide=true：默认收起，鼠标靠近 sidebarPosition 一侧的
+ *   屏幕边缘时悬浮呼出，远离后收回——不占布局宽度。
+ * 历史 setting sidebarVisible 不再参与显示逻辑（其「隐藏」语义会与
+ * 收起后的侧栏互锁：设置入口就在侧栏里，隐藏后无法再打开）。
+ */
+const sidebarAutoHide = computed(() => settings.value.sidebarAutoHide);
+
+/** 自动隐藏模式下侧边栏的呼出状态（由全局鼠标坐标判定驱动） */
+const sidebarPeek = ref(false);
+
+/** 距屏幕侧缘多少像素内开始呼出 */
+const SIDEBAR_PEEK_THRESHOLD = 24;
+
+/** 侧栏宽度（--sidebar-width）+ 缓冲：超过该距离视为「离开侧栏」 */
+const SIDEBAR_PEEK_HOLD = 200;
+
+/**
+ * 全局 mousemove 坐标判定：不依赖元素级 hover（热区/侧栏的 hit-testing
+ * 受层叠与遮挡影响），鼠标坐标靠近对应侧缘即呼出，绝对可靠。
+ * 拖拽排序期间不收回——侧栏中途消失会打断 SortableJS。
+ */
+function onDocumentMouseMove(event: MouseEvent): void {
+  if (!sidebarAutoHide.value) return;
+  const fromEdge = settings.value.sidebarPosition === 'left'
+    ? event.clientX
+    : window.innerWidth - event.clientX;
+  if (fromEdge <= SIDEBAR_PEEK_THRESHOLD) {
+    sidebarPeek.value = true;
+    return;
+  }
+  if (document.body.classList.contains('is-dragging')) return;
+  if (fromEdge >= SIDEBAR_PEEK_HOLD) sidebarPeek.value = false;
+}
+
+/* ------------------------------------------------------------------ *
+ * 顶部工具栏
+ *
+ * 操作入口刻意收敛：顶栏右侧只剩「批量管理」一个图标动作。
+ * 添加网站走各分区底部的常驻按钮；新建分区走分区「更多」菜单；
+ * 收藏 / 最近访问的入口在侧边栏底部（sidebar__tool）。
+ * ------------------------------------------------------------------ */
+
+/* ------------------------------------------------------------------ *
+ * 滚轮切换导航页面与切换动画
+ * ------------------------------------------------------------------ */
+
+/**
+ * 整个页面（内容区、侧边栏）滚动鼠标滚轮即切换导航页面：
+ * 向下 = 下一页、向上 = 上一页（循环）。这是侧边栏收起时通用的快速切换方式。
+ * 滚轮手势整体让给页面切换：内容超屏时用滚动条浏览，滚轮不再滚动内容。
+ * 弹窗与浮层（设置等）渲染在 .app__main / .sidebar
+ * 之外，落在其中的滚轮不切换，留给浮层自身的列表滚动。
+ * 冷却 250ms：一格滚轮（尤其触控板惯性）会连续触发多次 wheel 事件。
+ */
+let wheelLocked = false;
+
+/** 页面切换过渡名：滚轮按方向取 page-forward / page-back，其余入口 page-fade */
+const pageTransition = ref('page-fade');
+
+function onDocumentWheel(event: WheelEvent): void {
+  if (pages.value.length < 2 || wheelLocked) return;
+  if (Math.abs(event.deltaY) < 10) return;
+  const target = event.target instanceof Element ? event.target : null;
+  if (!target?.closest('.app__main, .sidebar')) return;
+  if (document.body.classList.contains('is-dragging')) return;
+
+  // 阻止内容区 / 侧栏列表随之滚动：切页后内容会重置回顶部，滚动没有意义
+  event.preventDefault();
+
+  wheelLocked = true;
+  window.setTimeout(() => {
+    wheelLocked = false;
+  }, 250);
+
+  const ids = pages.value.map((page) => page.id);
+  const index = ids.indexOf(store.state.activePageId);
+  if (index < 0) return;
+  const next = (index + (event.deltaY > 0 ? 1 : -1) + ids.length) % ids.length;
+  const nextId = ids[next];
+  if (nextId) void switchPage(nextId, event.deltaY > 0 ? 'forward' : 'back');
+}
+
+/** 新页面内容进场前滚回顶部：从长页面切走时不该停留在半截位置 */
+const scrollContainer = ref<HTMLElement | null>(null);
+
+function resetScrollTop(): void {
+  if (scrollContainer.value) scrollContainer.value.scrollTop = 0;
 }
 
 /**
@@ -989,9 +1071,10 @@ async function reloadFromStorage(): Promise<void> {
 
 useSortable({
   container: sectionsContainer,
-  // 只允许拖动分区本身，避免与外层/内层卡片网格的拖拽冲突
+  // 只允许拖动分区本身，避免与外层/内层列表的拖拽冲突
   draggable: '.section-panel',
-  handle: '.section-panel__header',
+  // 手柄限定为专用元素：用整个 header 会让标题栏里的按钮点击被拖拽吃掉
+  handle: '.section-panel__grip',
   order: () => sections.value.map((section) => section.id),
   onReorder: (ids) => void reorderSections(ids),
 });
@@ -1012,13 +1095,6 @@ function onKeydown(event: KeyboardEvent): void {
   if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
     event.preventDefault();
     searchBarRef.value?.focus();
-    return;
-  }
-
-  // Ctrl/⌘ + B：显示/隐藏导航栏
-  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'b') {
-    event.preventDefault();
-    sidebarCollapsed.value = !sidebarCollapsed.value;
     return;
   }
 
@@ -1047,22 +1123,11 @@ function onKeydown(event: KeyboardEvent): void {
   }
 }
 
-/* ------------------------------------------------------------------ *
- * 组件状态检测
- * ------------------------------------------------------------------ */
-
-const isNarrow = ref(false);
-let resizeObserver: (() => void) | null = null;
-
-function updateNarrow(): void {
-  isNarrow.value = window.innerWidth < 760;
-}
-
 onMounted(() => {
-  updateNarrow();
-  window.addEventListener('resize', updateNarrow);
   document.addEventListener('keydown', onKeydown);
-  resizeObserver = () => window.removeEventListener('resize', updateNarrow);
+  // passive: false：document 级 wheel 默认被动，需显式声明才能 preventDefault
+  document.addEventListener('wheel', onDocumentWheel, { passive: false });
+  document.addEventListener('mousemove', onDocumentMouseMove);
   void refreshUsage();
 
   if (store.state.errorMessage) {
@@ -1074,8 +1139,9 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
-  resizeObserver?.();
   document.removeEventListener('keydown', onKeydown);
+  document.removeEventListener('wheel', onDocumentWheel);
+  document.removeEventListener('mousemove', onDocumentMouseMove);
   closeContextMenu();
 });
 </script>
@@ -1084,111 +1150,56 @@ onBeforeUnmount(() => {
   <NConfigProvider :theme="naiveTheme" :theme-overrides="naiveOverrides" :locale="zhCN">
     <div
       class="app"
-      :class="{ 'app--narrow': isNarrow, 'app--sidebar-left': settings.sidebarPosition === 'left' }"
+      :class="{
+        'app--sidebar-autohide': sidebarAutoHide,
+        'app--sidebar-peek': sidebarAutoHide && sidebarPeek,
+      }"
       :data-sidebar-position="settings.sidebarPosition"
     >
     <!--
       侧边栏放在 DOM 的第一位，通过容器上的 flex-direction: row-reverse
       把它视觉上移到右侧。这样切换左右布局时组件不会重建，
-      拖拽实例（SortableJS）与折叠状态都能保持。
+      拖拽实例（SortableJS）与滚动位置都能保持。
+      自动隐藏模式下侧边栏改为悬浮定位（仍不重建组件），呼出状态由
+      全局 mousemove 坐标判定驱动（见 onDocumentMouseMove）。
+      绝不能调整这里的子元素顺序——否则 Vue 会按下标复用，
+      把 Sidebar 与 main 一起重建。
     -->
     <Sidebar
       :pages="pages"
       :active-page-id="store.state.activePageId"
       :section-counts="sectionCounts"
       :website-counts="websiteCounts"
-      :collapsed="sidebarCollapsed"
       :position="settings.sidebarPosition"
       @select="selectPage"
-      @create-page="requestCreatePage"
       @rename="renamePage"
       @edit-page="requestEditPage"
       @remove-page="removePage"
-      @manage-pages="pageManagerOpen = true"
       @open-settings="openSettings"
-      @toggle-collapse="sidebarCollapsed = !sidebarCollapsed"
+      @reorder="reorderPages"
       @context-menu="onPageContextMenu"
       @open-actions-menu="onActionsMenu"
     />
 
     <main class="app__main">
-      <header class="app__toolbar">
-        <div class="app__brand" :title="`My Navi · 本地导航工作台（数据保存在 ${store.info.backend}）`">
-          <span class="app__logo">
-            <SvgIcon name="grid" :size="18" filled />
-          </span>
-          <span class="app__brand-text">
-            <strong>My Navi</strong>
-            <small>数据保存在本地 · 不联网同步</small>
-          </span>
-        </div>
-
-        <div class="app__search">
-          <SearchBar
-            ref="searchBarRef"
-            :nav-state="store.state.data"
-            :default-engine-id="settings.defaultSearchEngine"
-            :history-enabled="settings.searchHistoryEnabled"
-            :shortcuts-enabled="settings.shortcutsEnabled"
-            @open="openWebsiteById"
-            @search="handleSearch"
-            @quick-add="quickAddCurrentPage"
-          />
-        </div>
-
-        <div class="app__tools">
-          <div class="app__tool-wrapper">
-            <button
-              type="button"
-              class="btn btn--default btn--sm"
-              :aria-expanded="favoritesOpen"
-              aria-haspopup="true"
-              title="收藏与最近访问"
-              @click="favoritesOpen = !favoritesOpen"
-            >
-              <SvgIcon name="star" :size="15" />
-              收藏 / 最近
-              <span v-if="favorites.length" class="badge badge--brand">{{ favorites.length }}</span>
-            </button>
-            <div v-if="favoritesOpen" class="app__popover">
-              <FavoritesRecentPanel
-                :favorites="favorites"
-                :recent-visits="recentVisits"
-                :recent-enabled="settings.recentVisitsEnabled"
-                :existing-website-ids="existingWebsiteIds"
-                @open="openWebsiteById"
-                @open-url="(payload) => openVisitUrl(payload.url, payload.name)"
-                @clear-recent="clearRecentVisits"
-                @set-favorite="toggleFavoriteFromPanel"
-              />
-            </div>
+      <!--
+        没有独立顶栏：整个视口就是一页内容，搜索框悬浮在内容顶部居中，
+        侧边栏常驻于一侧（自动隐藏模式下悬浮呼出、不占布局宽度）。
+      -->
+      <div ref="scrollContainer" class="app__scroll">
+        <div class="app__content">
+          <!-- 搜索区：页面内容的第一行，居中悬浮 -->
+          <div class="app__search">
+            <SearchBar
+              ref="searchBarRef"
+              :nav-state="store.state.data"
+              :default-engine-id="settings.defaultSearchEngine"
+              :history-enabled="settings.searchHistoryEnabled"
+              @open="openWebsiteById"
+              @search="handleSearch"
+            />
           </div>
 
-          <button
-            type="button"
-            class="btn btn--default btn--sm"
-            :class="{ 'btn--active': batchMode }"
-            title="批量管理网站"
-            @click="toggleBatchMode"
-          >
-            <SvgIcon name="check" :size="15" />
-            批量
-          </button>
-
-          <button type="button" class="btn btn--default btn--sm" title="新建分区" @click="requestCreateSection">
-            <SvgIcon name="plus" :size="15" />
-            新分区
-          </button>
-
-          <button type="button" class="btn btn--primary btn--sm" title="新增网站" @click="quickAddCurrentPage">
-            <SvgIcon name="plus" :size="15" />
-            添加网站
-          </button>
-        </div>
-      </header>
-
-      <div class="app__scroll">
-        <div class="app__content">
           <div v-if="!store.state.ready" class="app__loading">
             <SvgIcon name="refresh" :size="18" />
             <span>正在读取本地配置…</span>
@@ -1224,89 +1235,98 @@ onBeforeUnmount(() => {
               @exit="toggleBatchMode"
             />
 
-            <header class="app__page-header">
-              <div class="app__page-title">
-                <span class="app__page-icon">
-                  <SvgIcon :name="activePage?.icon ?? 'grid'" :size="18" />
-                </span>
-                <h1>{{ activePage?.name ?? '未选择页面' }}</h1>
-                <span class="badge">{{ sections.length }} 个分区</span>
-                <span class="badge badge--brand">{{ activePageWebsites.length }} 个网站</span>
-              </div>
-              <div class="app__page-actions">
-                <button type="button" class="btn btn--default btn--sm" @click="requestCreateSection">
-                  <SvgIcon name="plus" :size="14" />
-                  新建分区
-                </button>
-              </div>
-            </header>
+            <!--
+              页面切换动画：滚轮切换带方向（下一页自下而上、上一页反向），
+              侧栏点击等其它入口淡入淡出。out-in 模式下旧页面先离场、
+              新页面再进场，任一时刻只有一个分区拖拽容器，useSortable
+              的容器 ref 随之销毁重建（其内部 watch 已处理该时序）。
+              进场前先把内容滚回顶部（resetScrollTop）。
+            -->
+            <Transition :name="pageTransition" mode="out-in" @before-enter="resetScrollTop">
+              <div :key="store.state.activePageId" class="app__page">
+                <!--
+                  页面标题区。
+                  必须放在 .app__sections 之外：分区拖拽容器靠后代选择器收集
+                  [data-sortable-id]，多放任何东西都会被当成待排序项。
+                -->
+                <div class="app__page-header">
+                  <div class="app__page-title">
+                    <span class="app__page-icon">
+                      <SvgIcon :name="activePage?.icon ?? 'grid'" :size="16" />
+                    </span>
+                    <h1>{{ activePage?.name ?? '未选择页面' }}</h1>
+                    <span class="app__page-stats">
+                      {{ sections.length }} 个分区 · {{ activePageWebsites.length }} 个网站
+                    </span>
+                  </div>
+                </div>
 
-            <!-- 还没有任何页面 -->
-            <div v-if="pages.length === 0" class="app__empty app__empty--large">
-              <SvgIcon name="layers" :size="24" />
-              <h2>还没有导航页面</h2>
-              <p>创建一个导航页面来开始整理你的常用网站。</p>
-              <div class="app__empty-actions">
-                <button type="button" class="btn btn--primary" @click="requestCreatePage">
-                  <SvgIcon name="plus" :size="15" />
-                  新建导航页面
-                </button>
-                <button type="button" class="btn btn--default" @click="restoreDefaults">
-                  <SvgIcon name="refresh" :size="15" />
-                  恢复默认演示数据
-                </button>
-              </div>
-            </div>
+                <!-- 还没有任何页面（紧凑空状态：不占大面积、无插画） -->
+                <div v-if="pages.length === 0" class="app__empty">
+                  <SvgIcon name="layers" :size="18" />
+                  <p>还没有导航页面，创建一个开始整理常用网站。</p>
+                  <div class="app__empty-actions">
+                    <button type="button" class="btn btn--primary btn--sm" @click="requestCreatePage">
+                      <SvgIcon name="plus" :size="14" />
+                      新建导航页面
+                    </button>
+                    <button type="button" class="btn btn--text btn--sm" @click="restoreDefaults">
+                      <SvgIcon name="refresh" :size="14" />
+                      恢复默认演示数据
+                    </button>
+                  </div>
+                </div>
 
-            <!-- 页面存在但没有分区 -->
-            <div v-else-if="sections.length === 0" class="app__empty app__empty--large">
-              <SvgIcon name="folder" :size="24" />
-              <h2>「{{ activePage?.name }}」还没有分区</h2>
-              <p>分区用于把网站按用途归类，例如「开发环境」「威胁情报」。</p>
-              <button type="button" class="btn btn--primary" @click="requestCreateSection">
-                <SvgIcon name="plus" :size="15" />
-                新建分区
-              </button>
-            </div>
+                <!-- 页面存在但没有分区 -->
+                <div v-else-if="sections.length === 0" class="app__empty">
+                  <SvgIcon name="folder" :size="18" />
+                  <p>「{{ activePage?.name }}」还没有分区，分区用于把网站按用途归类。</p>
+                  <!-- 必须写成调用表达式：直接写方法名会把 MouseEvent 当成 pageId 传进去 -->
+                  <button type="button" class="btn btn--primary btn--sm" @click="requestCreateSection()">
+                    <SvgIcon name="plus" :size="14" />
+                    新建分区
+                  </button>
+                </div>
 
-            <!-- 分区列表（可拖拽排序） -->
-            <div v-else ref="sectionsContainer" class="app__sections">
-              <SectionPanel
-                v-for="section in sections"
-                :key="`${section.id}:${settings.showDescription}:${settings.remoteFavicon}`"
-                :section="section"
-                :websites="store.websitesOfSection(section.id)"
-                :selected-ids="selectedIds"
-                :batch-mode="batchMode"
-                @toggle-collapse="toggleSection"
-                @edit-section="requestEditSection"
-                @remove="removeSection"
-                @add-website="requestCreateWebsite"
-                @context-menu="onSectionContextMenu"
-                @open-actions-menu="onActionsMenu"
-                @select-all="selectAllInSection"
-                @reorder="(ids) => reorderWebsites(section.id, ids)"
-              >
-                <template #websites>
-                  <WebsiteCard
-                    v-for="website in store.websitesOfSection(section.id)"
-                    :key="website.id"
-                    :website="website"
+                <!-- 分区列表（可拖拽排序） -->
+                <div v-else ref="sectionsContainer" class="app__sections">
+                  <SectionPanel
+                    v-for="section in sections"
+                    :key="`${section.id}:${settings.showDescription}:${settings.remoteFavicon}`"
+                    :section="section"
+                    :websites="store.websitesOfSection(section.id)"
+                    :selected-ids="selectedIds"
                     :batch-mode="batchMode"
-                    :selected="selectedIds.includes(website.id)"
-                    :show-description="settings.showDescription"
-                    :remote-favicon="settings.remoteFavicon"
-                    @open="openWebsite"
-                    @edit="requestEditWebsite"
-                    @remove="removeWebsite"
-                    @favorite="toggleFavorite"
-                    @move="moveWebsite"
-                    @context-menu="onWebsiteContextMenu"
-                    @toggle-select="toggleSelect"
-                  />
-                </template>
-              </SectionPanel>
-            </div>
+                    @toggle-collapse="toggleSection"
+                    @remove="removeSection"
+                    @add-website="requestCreateWebsite"
+                    @context-menu="onSectionContextMenu"
+                    @open-actions-menu="onActionsMenu"
+                    @select-all="selectAllInSection"
+                    @reorder="(ids) => reorderWebsites(section.id, ids)"
+                  >
+                    <template #websites>
+                      <WebsiteCard
+                        v-for="website in store.websitesOfSection(section.id)"
+                        :key="website.id"
+                        :website="website"
+                        :batch-mode="batchMode"
+                        :selected="selectedIds.includes(website.id)"
+                        :show-description="settings.showDescription"
+                        :remote-favicon="settings.remoteFavicon"
+                        @open="openWebsite"
+                        @edit="requestEditWebsite"
+                        @remove="removeWebsite"
+                        @favorite="toggleFavorite"
+                        @move="moveWebsite"
+                        @context-menu="onWebsiteContextMenu"
+                        @toggle-select="toggleSelect"
+                      />
+                    </template>
+                  </SectionPanel>
+                </div>
+              </div>
+            </Transition>
           </template>
         </div>
       </div>
@@ -1318,19 +1338,6 @@ onBeforeUnmount(() => {
       :page="editingPage"
       :sibling-names="pages.map((page) => page.name)"
       @submit="submitPageForm"
-    />
-
-    <PageManagerModal
-      v-model="pageManagerOpen"
-      :pages="pages"
-      :active-page-id="store.state.activePageId"
-      :section-counts="sectionCounts"
-      :website-counts="websiteCounts"
-      @select="selectPage"
-      @create-page="requestCreatePage"
-      @edit-page="requestEditPage"
-      @remove-page="removePage"
-      @reorder="reorderPages"
     />
 
     <SectionForm
@@ -1358,7 +1365,6 @@ onBeforeUnmount(() => {
         pages: pages.length,
         sections: allSections.length,
         websites: allWebsites.length,
-        recentVisits: recentVisits.length,
       }"
       :usage="usage"
       :backend="store.info.backend"
@@ -1369,7 +1375,6 @@ onBeforeUnmount(() => {
       @pick-import="pickImportFile"
       @restore-defaults="restoreDefaults"
       @clear-data="clearAllData"
-      @clear-recent="clearRecentVisits"
       @clear-search-history="clearAllSearchHistory"
     />
 
@@ -1432,14 +1437,15 @@ onBeforeUnmount(() => {
 <style scoped>
 .app {
   display: flex;
-  flex-direction: row-reverse;
+  /* 默认左侧栏：DOM 顺序即为视觉顺序 */
+  flex-direction: row;
   height: 100vh;
   overflow: hidden;
 }
 
-/* 侧边栏默认在右侧；设置为左侧时取消反向排列 */
-.app[data-sidebar-position='left'] {
-  flex-direction: row;
+/* 侧边栏默认在左侧；设置为右侧时反向排列 */
+.app[data-sidebar-position='right'] {
+  flex-direction: row-reverse;
 }
 
 .app__main {
@@ -1447,89 +1453,59 @@ onBeforeUnmount(() => {
   flex-direction: column;
   flex: 1;
   min-width: 0;
-}
-
-.app__toolbar {
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
-  padding: var(--space-3) var(--space-5);
-  background: var(--bg-app-bar);
-  border-bottom: 1px solid var(--border-color);
-  backdrop-filter: blur(8px);
-}
-
-.app__brand {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  flex: none;
+  /* 允许内部滚动容器在内容超高时收缩，否则 .app__scroll 不会滚动 */
+  min-height: 0;
 }
 
 /*
- * 导航栏在左侧时，侧边栏顶部已经展示了品牌信息，
- * 这里只保留图标，避免同一屏出现两处「My Navi」。
+ * 搜索区：没有独立顶栏，搜索框是页面内容的第一行、水平居中。
+ * 顶部留白（margin + 容器 padding 共 100px）让它成为页面视觉起点
+ * （新标签页习惯：搜索框不贴顶）。宽度由 SearchBar 组件的
+ * --search-max-width 封顶。
  */
-.app--sidebar-left .app__brand-text {
-  display: none;
-}
-
-.app__logo {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 30px;
-  height: 30px;
-  border-radius: var(--radius-sm);
-  background: var(--brand-600);
-  color: #fff;
-}
-
-.app__brand-text {
-  display: flex;
-  flex-direction: column;
-}
-
-.app__brand-text strong {
-  font-size: var(--font-base);
-  color: var(--text-primary);
-}
-
-.app__brand-text small {
-  font-size: var(--font-xs);
-  color: var(--text-tertiary);
-}
-
 .app__search {
-  flex: 1;
-  min-width: 0;
   display: flex;
   justify-content: center;
+  width: 100%;
+  margin-top: 80px; /* 加上 .app__content 的 padding-top(20px)，距视口顶恰好 100px */
 }
 
-.app__tools {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  flex: none;
+/*
+ * 自动隐藏模式：侧边栏改为悬浮层，默认平移出屏、不可见，
+ * 呼出（热区或侧栏本体 hover）时滑回并投影，不占布局宽度——
+ * 主区域始终占满整页。仍用 CSS 而非 v-if 切换，组件不重建。
+ */
+.app--sidebar-autohide :deep(.sidebar) {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 30;
+  transform: translateX(-100%);
+  visibility: hidden;
+  box-shadow: var(--shadow-lg);
+  transition:
+    transform 0.2s ease,
+    visibility 0.2s;
 }
 
-/* 搜索栏在窄屏下换行显示更合适 */
-@media (max-width: 1180px) {
-  .app__search {
-    order: 3;
-    flex-basis: 100%;
-  }
+.app[data-sidebar-position='right'].app--sidebar-autohide :deep(.sidebar) {
+  left: auto;
+  right: 0;
+  transform: translateX(100%);
+}
 
-  .app__toolbar {
-    flex-wrap: wrap;
-  }
+.app--sidebar-autohide.app--sidebar-peek :deep(.sidebar),
+.app[data-sidebar-position='right'].app--sidebar-autohide.app--sidebar-peek :deep(.sidebar) {
+  transform: translateX(0);
+  visibility: visible;
 }
 
 /* 更窄时改为竖向堆叠：侧边栏放到工具栏下方独占一行（左右位置设置不再影响视觉效果） */
 @media (max-width: 760px) {
   .app,
-  .app[data-sidebar-position='left'] {
+  .app[data-sidebar-position='left'],
+  .app[data-sidebar-position='right'] {
     flex-direction: column;
   }
 
@@ -1544,30 +1520,25 @@ onBeforeUnmount(() => {
   }
 }
 
-.app__tool-wrapper {
-  position: relative;
-}
-
-.app__popover {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  z-index: 40;
-}
-
-.btn--active {
-  border-color: var(--brand-400);
-  color: var(--brand-600);
-  background: var(--brand-50);
-}
-
 .app__scroll {
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
 }
 
+/*
+ * 分区网格的容器查询锚点。
+ *
+ * 为什么用容器查询而不是视口媒体查询：真正决定能放几列的是「扣掉侧边栏、
+ * 再被 max-width 封顶之后」的可用宽度，视口宽度在这个布局里是错的度量——
+ * 同一块屏幕上，显示/隐藏侧边栏会让列数变化，而视口宽度根本没变。
+ *
+ * container-type 必须打在这层（而不是 .app__scroll）：只有它同时受
+ * 侧边栏宽度与 --content-max-width 约束，量出来的才是卡片真正能用的宽度。
+ * 具名（workbench）是为了避免日后新增别的容器时规则绑定到错误的祖先。
+ */
 .app__content {
+  container: workbench / inline-size;
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
@@ -1609,69 +1580,157 @@ onBeforeUnmount(() => {
   flex: 1;
 }
 
+/*
+ * 页面切换动画容器：切页时整块（标题 + 内容）过渡。
+ * gap 复刻 .app__content 的间距——包了这一层后，
+ * banner / 批量工具栏与页面区块之间的间距仍由 .app__content 的 gap 负责。
+ */
+.app__page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* 过渡时长与滚轮冷却（250ms）匹配：连滚时动画总能完整走完 */
+.page-forward-enter-active,
+.page-forward-leave-active,
+.page-back-enter-active,
+.page-back-leave-active,
+.page-fade-enter-active,
+.page-fade-leave-active {
+  transition:
+    opacity 0.18s ease,
+    transform 0.18s ease;
+}
+
+/* 下一页：新页面自下而上进入，旧页面向上让位（与滚轮下滑方向一致） */
+.page-forward-enter-from {
+  opacity: 0;
+  transform: translateY(16px);
+}
+
+.page-forward-leave-to {
+  opacity: 0;
+  transform: translateY(-16px);
+}
+
+/* 上一页：反向 */
+.page-back-enter-from {
+  opacity: 0;
+  transform: translateY(-16px);
+}
+
+.page-back-leave-to {
+  opacity: 0;
+  transform: translateY(16px);
+}
+
+/* 常规入口（侧栏点击等）：纯淡入淡出 */
+.page-fade-enter-from,
+.page-fade-leave-to {
+  opacity: 0;
+}
+
+/* 页面标题栏：紧凑一行，不使用横幅或大面积底色 */
 .app__page-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-3);
   flex-wrap: wrap;
+  min-height: 32px;
 }
 
 .app__page-title {
   display: flex;
   align-items: center;
   gap: var(--space-2);
+  min-width: 0;
 }
 
 .app__page-icon {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
-  height: 30px;
+  width: 26px;
+  height: 26px;
   border-radius: var(--radius-sm);
   background: var(--bg-active);
   color: var(--brand-600);
+  flex: none;
 }
 
 .app__page-title h1 {
   font-size: var(--font-xl);
   font-weight: 600;
+  color: var(--text-primary);
 }
 
+/* 统计信息：一行次级文字，不用两个徽章 */
+.app__page-stats {
+  font-size: var(--font-sm);
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+/*
+ * 分区卡片网格（本次改版的核心）
+ *
+ * - 多列自适应：列数由下面一组的容器查询决定，见 .app__content 上的说明。
+ * - align-items: start 是必须的：否则同一行的卡片会被拉伸到等高，
+ *   「卡片高度由内容决定」就失效了。
+ * - minmax(0, 1fr) 里的 0 也是必须的：默认 min-width: auto 会让内容
+ *   （长网址、长名称）把列撑宽，进而产生横向滚动条。
+ */
 .app__sections {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
+  display: grid;
+  gap: var(--space-4);
+  align-items: start;
+  grid-template-columns: minmax(0, 1fr);
 }
 
+/* 断点按「可用宽度」而非视口宽度取：<650 → 1 列，650/1000/1400 → 2/3/4 列 */
+@container workbench (min-width: 650px) {
+  .app__sections {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@container workbench (min-width: 1000px) {
+  .app__sections {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@container workbench (min-width: 1400px) {
+  .app__sections {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+/* 空状态：紧凑提示 + 一个动作，不用插画、不占大面积 */
 .app__empty {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-6);
+  gap: var(--space-3);
+  padding: var(--space-5) var(--space-4);
   color: var(--text-tertiary);
-  background: var(--bg-panel-translucent);
-  border: 1px dashed var(--border-strong);
+  background: var(--bg-panel);
+  border: 1px solid var(--border-color);
   border-radius: var(--radius-lg);
   text-align: center;
 }
 
-.app__empty h2 {
-  font-size: var(--font-lg);
-  color: var(--text-primary);
-}
-
 .app__empty p {
-  font-size: var(--font-base);
-  max-width: 420px;
+  font-size: var(--font-sm);
+  color: var(--text-secondary);
+  max-width: 380px;
 }
 
 .app__empty-actions {
   display: flex;
   gap: var(--space-2);
-  margin-top: var(--space-2);
   flex-wrap: wrap;
   justify-content: center;
 }
@@ -1765,25 +1824,14 @@ onBeforeUnmount(() => {
   color: var(--text-tertiary);
 }
 
-@media (max-width: 1100px) {
-  .app__toolbar {
-    flex-wrap: wrap;
-  }
-
-  .app__brand-text {
-    display: none;
-  }
-}
-
 @media (max-width: 760px) {
-  .app__toolbar {
-    padding: var(--space-3);
-  }
-
-  .app__tools {
-    width: 100%;
-    justify-content: flex-start;
-    flex-wrap: wrap;
+  /* 窄屏侧栏横排在底部：自动隐藏的悬浮定位还原为常规布局 */
+  .app--sidebar-autohide :deep(.sidebar),
+  .app[data-sidebar-position='right'].app--sidebar-autohide :deep(.sidebar) {
+    position: static;
+    transform: none;
+    visibility: visible;
+    box-shadow: none;
   }
 
   .app__content {

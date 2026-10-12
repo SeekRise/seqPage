@@ -92,28 +92,43 @@ const evaluate = async (expr) => {
 await call('Runtime.enable');
 await new Promise((r) => setTimeout(r, 2500));
 
+/*
+ * 输出改版后的关键布局尺寸：
+ * - sections：页面级多列网格（列数由容器查询决定 → 报告实际列数与列宽）
+ * - sectionCard：分区卡片的高度（应随内容变化，且同一行内不被拉平）
+ * - row：分区内的网站条目（纵向列表行）
+ */
 const info = await evaluate(`(() => {
-  const grid = document.querySelector('.section-panel__grid');
-  const card = document.querySelector('.website-card');
-  const main = card?.querySelector('.website-card__main');
-  const icon = card?.querySelector('.website-card__icon');
-  const text = card?.querySelector('.website-card__text');
-  const name = card?.querySelector('.website-card__name');
-  const desc = card?.querySelector('.website-card__desc');
-  const actions = card?.querySelector('.website-card__actions');
+  const sections = document.querySelector('.app__sections');
+  const content = document.querySelector('.app__content');
+  const panel = document.querySelector('.section-panel');
+  const list = document.querySelector('.section-panel__grid');
+  const row = document.querySelector('.website-card');
+  const grip = document.querySelector('.website-card__grip');
+  const main = row?.querySelector('.website-card__main');
+  const name = row?.querySelector('.website-card__name');
+  const actions = row?.querySelector('.website-card__actions');
   const rect = (el) => { if (!el) return null; const r = el.getBoundingClientRect(); return { w: Math.round(r.width), h: Math.round(r.height), x: Math.round(r.x) }; };
   const cs = (el, props) => { if (!el) return null; const c = getComputedStyle(el); const o = {}; for (const p of props) o[p] = c.getPropertyValue(p); return o; };
+  const cols = sections ? getComputedStyle(sections).gridTemplateColumns.split(' ').filter(Boolean) : [];
   return {
     viewport: { w: window.innerWidth, h: window.innerHeight },
-    grid: { ...rect(grid), cols: cs(grid, ['grid-template-columns','gap','width']) },
-    card: rect(card),
-    main: { ...rect(main), ...cs(main, ['display','padding','gap','flex']) },
-    icon: { ...rect(icon), ...cs(icon, ['width','flex']) },
-    text: { ...rect(text), ...cs(text, ['min-width','flex','width','overflow']) },
-    name: { ...rect(name), ...cs(name, ['white-space','overflow','text-overflow','font-size']) },
-    desc: rect(desc),
+    content: { ...rect(content), container: cs(content, ['container-type','max-width']) },
+    sectionsGrid: {
+      ...rect(sections),
+      columnCount: cols.length,
+      columnWidths: cols,
+      ...cs(sections, ['grid-template-columns','gap','align-items']),
+    },
+    sectionCards: [...document.querySelectorAll('.section-panel')].map((p) => Math.round(p.getBoundingClientRect().height)),
+    sectionList: { ...rect(list), ...cs(list, ['display','flex-direction','gap']) },
+    row: rect(row),
+    grip: rect(grip),
+    main: { ...rect(main), ...cs(main, ['display','padding','gap']) },
+    name: { ...rect(name), ...cs(name, ['white-space','overflow','text-overflow']) },
     actions: rect(actions),
     nameText: name?.textContent,
+    rowHeightVar: cs(document.documentElement, ['--row-padding','--section-min-width']),
   };
 })()`);
 

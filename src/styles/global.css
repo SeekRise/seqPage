@@ -26,8 +26,15 @@ body.is-dragging * {
   cursor: grabbing !important;
 }
 
-body.is-dragging .website-card,
-body.is-dragging .sidebar-item {
+/*
+ * 只穿透卡片/页面项「内部」的按钮，不能把整个 .website-card /
+ * .sidebar-item 设为 pointer-events: none——排序目标靠 dragover 的
+ * 命中元素向上查找卡片本身来确定，整卡穿透会让命中落到祖先容器上，
+ * SortableJS 永远找不到目标项（表现为拖得动但松手后顺序不变）。
+ * 按钮被穿透后命中自然落在卡片本体上，两件事都成立。
+ */
+body.is-dragging .website-card button,
+body.is-dragging .sidebar-item button {
   pointer-events: none;
 }
 

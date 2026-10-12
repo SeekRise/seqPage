@@ -3,7 +3,7 @@ import { defineConfig } from 'vite';
 import vue from '@vitejs/plugin-vue';
 
 /**
- * My Navi 构建配置
+ * SeqPage 构建配置
  *
  * 关键点：
  * 1. `base: './'` —— 扩展页面运行在 chrome-extension:// 协议下，

@@ -473,6 +473,9 @@ export function parseSettings(value: unknown, defaults: AppSettings): AppSetting
     showDescription: toBoolean(raw.showDescription, defaults.showDescription),
     cardDensity: toEnum(raw.cardDensity, CARD_DENSITIES, defaults.cardDensity),
     sidebarPosition: toEnum(raw.sidebarPosition, SIDEBAR_POSITIONS, defaults.sidebarPosition),
+    sidebarVisible: toBoolean(raw.sidebarVisible, defaults.sidebarVisible),
+    sidebarAutoHide: toBoolean(raw.sidebarAutoHide, defaults.sidebarAutoHide),
+    showClock: toBoolean(raw.showClock, defaults.showClock),
     background: {
       type: toEnum(backgroundRaw.type, ['solid', 'gradient', 'image'] as const, defaults.background.type),
       color: typeof backgroundRaw.color === 'string' ? backgroundRaw.color : defaults.background.color,

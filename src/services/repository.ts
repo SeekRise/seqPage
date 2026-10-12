@@ -91,6 +91,13 @@ export function migrateDocument(
     warnings.push('检测到早期版本的配置，已自动补齐缺失字段并升级到 v1。');
   }
 
+  // v1 -> v2：新增 sidebarVisible / showClock 两个界面开关，属纯增量补齐。
+  // 这里刻意不产生用户可见提示：老用户升级不该被弹一条「配置已升级」的无意义警告。
+  // 具体字段的默认值由 parseSettings 在读取路径补齐（与版本号无关，双保险）。
+
+  // v2 -> v3：新增 sidebarAutoHide 界面开关（侧边栏自动隐藏），同为纯增量补齐，
+  // 处理方式与 v2 一致：不做数据变换，默认值由 parseSettings 补齐。
+
   // v0 -> v1：早期配置可能没有 meta 或 recentVisits
   return {
     ...document,

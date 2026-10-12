@@ -86,6 +86,14 @@ function onKeydown(event: KeyboardEvent): void {
     }"
     :data-sortable-id="website.id"
   >
+    <!--
+      拖拽手柄是 __main 的兄弟节点而非子节点：
+      嵌在 <button> 里既不是合法结构，点击也会被「打开网站」吞掉。
+    -->
+    <span class="website-card__grip" aria-hidden="true">
+      <SvgIcon name="menu" :size="13" />
+    </span>
+
     <button
       type="button"
       class="website-card__main"
@@ -166,42 +174,61 @@ function onKeydown(event: KeyboardEvent): void {
 </template>
 
 <style scoped>
+/*
+ * 分区内的网站条目：紧凑的纵向列表行。
+ * 这里是「行」而不是「卡片」——没有独立边框与圆角，
+ * 只靠悬停底色区分，避免在一个卡片里再堆一层卡片边框。
+ */
 .website-card {
   position: relative;
   display: flex;
   align-items: center;
-  min-height: var(--card-height);
-  background: var(--bg-panel);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-card);
-  box-shadow: var(--shadow-xs);
-  transition: border-color var(--transition-fast), box-shadow var(--transition-fast),
-    background-color var(--transition-fast);
-  overflow: hidden;
+  min-height: var(--row-min-height);
+  border-radius: var(--radius-sm);
+  transition: background-color var(--transition-fast);
 }
 
 .website-card:hover {
-  border-color: var(--brand-300);
-  box-shadow: var(--shadow-sm);
-}
-
-.website-card:focus-within {
-  border-color: var(--brand-400);
+  background: var(--bg-hover);
 }
 
 .website-card--selected {
-  border-color: var(--brand-500);
   background: var(--brand-50);
 }
 
+/* 收藏用左侧细色条标记，而不是再加一圈边框（颜色之外还有形状线索） */
 .website-card--favorite .website-card__main::after {
   content: '';
   position: absolute;
   left: 0;
-  top: 0;
-  bottom: 0;
-  width: 3px;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 55%;
+  width: 2px;
+  border-radius: var(--radius-pill);
   background: var(--color-warning);
+  opacity: 0.75;
+}
+
+/* 拖拽手柄：常显但很轻，悬停时变明显（否则拖拽入口难以发现） */
+.website-card__grip {
+  display: flex;
+  align-items: center;
+  flex: none;
+  padding-left: var(--space-1);
+  color: var(--text-tertiary);
+  opacity: 0.35;
+  cursor: grab;
+  transition: opacity var(--transition-fast);
+}
+
+.website-card:hover .website-card__grip,
+.website-card:focus-within .website-card__grip {
+  opacity: 0.8;
+}
+
+.website-card__grip:active {
+  cursor: grabbing;
 }
 
 .website-card__main {
@@ -210,21 +237,25 @@ function onKeydown(event: KeyboardEvent): void {
   gap: var(--space-3);
   flex: 1;
   min-width: 0;
-  padding: var(--space-2) var(--space-3);
+  /* 纵向内边距由卡片密度设置决定，行高因此随密度变化 */
+  padding: var(--row-padding) var(--space-2);
   text-align: left;
   background: transparent;
   color: inherit;
   border-radius: inherit;
 }
 
-/* 悬浮操作按钮：绝对定位（不占布局宽度），否则会挤压名称空间 */
+/*
+ * 悬浮操作按钮绝对定位（不占布局宽度），所以要在悬停时给右侧留出空间，
+ * 否则会被压在名称上。预留宽度 = 3 个 24px 按钮 + 间距。
+ */
 .website-card:hover .website-card__main,
 .website-card:focus-within .website-card__main {
-  padding-right: 82px;
+  padding-right: 84px;
 }
 
 .website-card--batch .website-card__main {
-  padding-right: var(--space-3);
+  padding-right: var(--space-2);
 }
 
 .website-card__icon {
@@ -267,17 +298,26 @@ function onKeydown(event: KeyboardEvent): void {
   line-height: 1.35;
 }
 
+/* 描述/域名用次级文字色，与名称（主文字色）拉开层级但不抢视线 */
 .website-card__desc {
   font-size: var(--font-xs);
-  color: var(--text-tertiary);
+  color: var(--text-secondary);
   line-height: 1.3;
 }
 
+/* 收藏标记：默认克制，悬停该条目时才完全凸显 */
 .website-card__star {
   display: flex;
   align-items: center;
   color: var(--color-warning);
   flex: none;
+  opacity: 0.7;
+  transition: opacity var(--transition-fast);
+}
+
+.website-card:hover .website-card__star,
+.website-card:focus-within .website-card__star {
+  opacity: 1;
 }
 
 .website-card__actions,
@@ -290,15 +330,18 @@ function onKeydown(event: KeyboardEvent): void {
   transition: opacity var(--transition-fast);
 }
 
-/* 操作按钮浮在卡片右侧，不参与布局计算 */
+/*
+ * 操作按钮浮在条目右侧，不参与布局计算。
+ * 不再垫一层不透明底色：悬停时整行已经是 --bg-hover，
+ * 垫白底会露出一个突兀的方块；名称下方已由 padding-right 预留出空间。
+ */
 .website-card__actions {
   position: absolute;
   top: 50%;
-  right: var(--space-2);
+  right: var(--space-1);
   transform: translateY(-50%);
   padding: 2px;
   border-radius: var(--radius-sm);
-  background: var(--bg-panel);
 }
 
 .website-card__check {
@@ -320,20 +363,26 @@ function onKeydown(event: KeyboardEvent): void {
   height: 24px;
 }
 
-/* 触屏设备没有 hover，选择框需要常显并预留空间 */
+/* 触屏设备没有 hover，操作入口需要常显并预留空间 */
 @media (hover: none) {
   .website-card__actions {
     opacity: 1;
   }
 
   .website-card:not(.website-card--batch) .website-card__main {
-    padding-right: 82px;
+    padding-right: 84px;
+  }
+
+  .website-card__grip {
+    opacity: 0.8;
+    cursor: default;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .website-card,
-  .website-card__actions {
+  .website-card__actions,
+  .website-card__grip {
     transition: none;
   }
 }

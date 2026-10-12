@@ -205,7 +205,7 @@ for (const { label, pattern } of capabilityChecks) {
 
 /* ---------------- 输出结果 ---------------- */
 
-console.log('\n=== My Navi 构建产物自检 ===\n');
+console.log('\n=== SeqPage 构建产物自检 ===\n');
 for (const line of passed) console.log(`  ✓ ${line}`);
 
 if (problems.length > 0) {

@@ -3,7 +3,7 @@
  * 页面表单（新增 / 重命名 / 修改图标）
  *
  * 与侧边栏的行内重命名并存：行内重命名用于快速改名，
- * 该弹窗用于需要同时调整图标与名称的场景，也供页面管理界面复用。
+ * 该弹窗用于需要同时调整图标与名称的场景。
  */
 import { computed, nextTick, ref, watch } from 'vue';
 import AppModal from '@/components/AppModal.vue';

@@ -1,5 +1,5 @@
 /**
- * My Navi - MV3 Service Worker
+ * SeqPage - MV3 Service Worker
  *
  * 职责（刻意保持极简，避免常驻开销）：
  * 1. 点击扩展图标时聚焦/打开导航工作台。
@@ -15,7 +15,7 @@ chrome.action.onClicked.addListener(async () => {
   try {
     await chrome.tabs.create({ url: NEWTAB_URL });
   } catch (error) {
-    console.error('[My Navi] 打开导航工作台失败：', error);
+    console.error('[SeqPage] 打开导航工作台失败：', error);
   }
 });
 
@@ -23,7 +23,7 @@ chrome.action.onClicked.addListener(async () => {
 chrome.runtime.onInstalled.addListener((details) => {
   if (details.reason === 'install') {
     chrome.tabs.create({ url: NEWTAB_URL }).catch((error) => {
-      console.warn('[My Navi] 安装后打开导航页失败（不影响使用）：', error);
+      console.warn('[SeqPage] 安装后打开导航页失败（不影响使用）：', error);
     });
   }
 });

@@ -204,7 +204,9 @@ export const DEMO_BLUEPRINT: readonly DemoPageBlueprint[] = [
         ],
       },
       {
-        name: '文档与笔记',
+        // 与「AI 工具」合并为一个分区：每页最多 4 个分区（CREATION_LIMITS），
+        // 演示数据本身要示范这个上限，不能自己先超
+        name: '文档与 AI',
         icon: 'book',
         color: '#8E5BD9',
         websites: [
@@ -234,13 +236,6 @@ export const DEMO_BLUEPRINT: readonly DemoPageBlueprint[] = [
             url: 'https://www.yuque.com/',
             description: '知识库与笔记',
           },
-        ],
-      },
-      {
-        name: 'AI 工具',
-        icon: 'star',
-        color: '#0E7490',
-        websites: [
           {
             name: 'ChatGPT',
             url: 'https://chatgpt.com/',

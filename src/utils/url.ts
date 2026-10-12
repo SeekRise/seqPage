@@ -175,7 +175,7 @@ export function getColorFromString(input: string): string {
 export async function openUrl(url: string, newTab: boolean): Promise<boolean> {
   const check = normalizeUrl(url);
   if (!check.ok) {
-    console.warn('[My Navi] 拒绝打开不安全地址：', url, check.message);
+    console.warn('[SeqPage] 拒绝打开不安全地址：', url, check.message);
     return false;
   }
 
@@ -188,7 +188,7 @@ export async function openUrl(url: string, newTab: boolean): Promise<boolean> {
         await tabsApi.create({ url: target });
         return true;
       } catch (error) {
-        console.warn('[My Navi] chrome.tabs.create 失败，回退 window.open：', error);
+        console.warn('[SeqPage] chrome.tabs.create 失败，回退 window.open：', error);
       }
     }
     window.open(target, '_blank', 'noopener,noreferrer');
@@ -203,7 +203,7 @@ export async function openUrl(url: string, newTab: boolean): Promise<boolean> {
         return true;
       }
     } catch (error) {
-      console.warn('[My Navi] chrome.tabs.update 失败，回退 location.assign：', error);
+      console.warn('[SeqPage] chrome.tabs.update 失败，回退 location.assign：', error);
     }
   }
 

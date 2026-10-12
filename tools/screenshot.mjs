@@ -156,9 +156,9 @@ await shoot(
   })()`,
 );
 
-// 通过设置面板把导航栏切到左侧，验证左右布局都能正常渲染
+// 通过设置面板把导航栏切到右侧（非默认布局），验证左右布局都能正常渲染
 await shoot(
-  'my-navi-sidebar-left',
+  'my-navi-sidebar-right',
   `(async () => {
     document.documentElement.dataset.theme = 'light';
     document.documentElement.style.removeProperty('--bg-page');
@@ -166,8 +166,8 @@ await shoot(
     buttons.find((el) => el.textContent.trim() === '设置')?.click();
     await new Promise((r) => setTimeout(r, 450));
     const modal = document.querySelector('[data-testid="settings-modal"]');
-    const leftRadio = modal?.querySelector('[data-testid="setting-sidebar-left"]');
-    leftRadio?.click();
+    const rightRadio = modal?.querySelector('[data-testid="setting-sidebar-right"]');
+    rightRadio?.click();
     await new Promise((r) => setTimeout(r, 500));
     document.querySelector('[data-testid="settings-done"]')?.click();
     await new Promise((r) => setTimeout(r, 600));

@@ -206,7 +206,7 @@ const after = await evaluate(`(async () => {
   }
 
   // 2) 点击页面上的其它按钮（空状态下主要是引导按钮）
-  const otherButtons = [...document.querySelectorAll('.app__empty button, .sidebar__add, .sidebar__tool')];
+  const otherButtons = [...document.querySelectorAll('.app__empty button, .sidebar__tool')];
   for (const button of otherButtons) {
     try { button.click(); } catch (e) { /* 忽略 */ }
     await new Promise((r) => setTimeout(r, 150));
@@ -283,7 +283,7 @@ const protectedAfterClear = await evaluate(`(async () => {
 })()`);
 check('清空后只读保护已解除', protectedAfterClear, (v) => v === false);
 
-console.log('\n=== My Navi 不可解析数据保护测试 ===\n');
+console.log('\n=== SeqPage 不可解析数据保护测试 ===\n');
 for (const item of checks) {
   console.log(`  ${item.pass ? '✓' : '✗'} ${item.label}${item.detail ? ` — ${item.detail}` : ''}`);
 }
