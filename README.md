@@ -50,6 +50,7 @@ npm run build      # 类型检查 + 生产构建，产物在 dist/
 | `npm run shot` | 生成浅色/深色界面截图到 `screenshots/` |
 | `npm run measure` | 输出关键元素的真实尺寸（排查布局问题时使用） |
 | `npm run icons` | 从根目录 `icon.jfif` 生成扩展图标 PNG（16/32/48/128/192） |
+| `npm run package` | 构建并打包成 `seqpage-<版本>.zip`（解压后即可加载，也是商店提交格式） |
 
 > 除 `dev` / `build` 外，其余测试命令需要本机安装 Chrome 或 Edge；未找到时会自动跳过并返回成功。
 > 开发服务器下也可以预览（此时存储回退到 `localStorage`），但标签页读取、图标缓存等
@@ -330,6 +331,7 @@ my-navi/
 │   └── main.ts
 ├── tools/
 │   ├── generate-icons.mjs       # 由 icon.jfif 生成各尺寸图标（headless Chrome 缩放，零依赖）
+│   ├── package-extension.mjs    # 把 dist/ 打成可分发的 zip（手写 zip 编码，零依赖）
 │   ├── verify-dist.mjs          # 构建产物自检
 │   ├── smoke-test.mjs           # headless Chrome 运行时冒烟测试
 │   └── check-esbuild.mjs        # 环境自检（esbuild 能否启动）

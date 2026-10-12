@@ -2,8 +2,11 @@ node_modules/
 dist/
 .tmp/
 dist-ssr/
+# 导入功能的测试残留：放在 public/ 下会被 build 拷进 dist/ 并随扩展分发出去
+public/__import-test.json
 screenshots/
 *.local
+*.zip
 .vite/
 *.log
 .DS_Store

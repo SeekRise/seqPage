@@ -17,6 +17,8 @@
     "measure": "node tools/measure.mjs",
     "check": "npm run type-check && npm run build:only && npm run verify && npm run legacy && npm run corrupt && npm run smoke",
     "icons": "node tools/generate-icons.mjs",
+    "package": "npm run build && node tools/package-extension.mjs",
+    "package:only": "node tools/package-extension.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

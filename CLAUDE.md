@@ -20,6 +20,7 @@ SeqPage — Chrome 新标签页个人导航工作台扩展。技术栈：**Manif
 | `npm run corrupt` | 不可解析数据的只读保护测试（验证绝不覆盖用户数据） |
 | `npm run check` | 全量验证：type-check → build:only → verify → legacy → corrupt → smoke |
 | `npm run shot` / `npm run measure` / `npm run icons` | 截图 / 布局测量 / 由 `icon.jfif` 生成扩展图标 |
+| `npm run package` | 构建后把 `dist/` 打成可分发的 `seqpage-<版本>.zip`（`tools/package-extension.mjs`） |
 
 除 `dev`/`build` 外的测试命令需要本机装有 Chrome 或 Edge，未找到时自动跳过并返回成功（测试退出码为 0 不代表真的跑过了）。没有单元测试框架——验证依赖 `tools/` 下的自研 Node 脚本（smoke-test.mjs、verify-dist.mjs 等）。
 
