@@ -1,0 +1,184 @@
+/**
+ * 主题变量
+ *
+ * 所有颜色、间距、圆角、阴影都在这里定义，业务组件只引用变量（DRY）。
+ * 深色模式通过 [data-theme='dark'] 覆盖同名变量，组件无需关心当前主题。
+ * 另提供卡片密度与用户自定义项（圆角、面板不透明度、背景图）的运行时覆盖。
+ */
+
+:root {
+  color-scheme: light;
+
+  /* ------- 品牌色：低饱和蓝 ------- */
+  --brand-50: #f2f6fe;
+  --brand-100: #e4ecfd;
+  --brand-200: #c9d9fa;
+  --brand-300: #a3bdf5;
+  --brand-400: #6f93ec;
+  --brand-500: #3b6fe0;
+  --brand-600: #2f5cc4;
+  --brand-700: #2749a0;
+  --brand-800: #1f3a7c;
+
+  /* ------- 页面与面板 ------- */
+  --bg-page: #eef2f8;
+  --bg-page-image: none;
+  --bg-app-bar: rgba(255, 255, 255, 0.88);
+  --bg-panel: #ffffff;
+  --bg-panel-translucent: rgba(255, 255, 255, 0.86);
+  --bg-subtle: #f5f7fb;
+  --bg-hover: #eef3fd;
+  --bg-active: #e2eafb;
+  --bg-input: #ffffff;
+  --bg-overlay: rgba(17, 24, 39, 0.42);
+  --panel-opacity: 1;
+
+  /* ------- 文本 ------- */
+  --text-primary: #1b2230;
+  --text-secondary: #5b6675;
+  --text-tertiary: #8a94a3;
+  --text-inverse: #ffffff;
+  --text-on-brand: #ffffff;
+
+  /* ------- 边框与分割线 ------- */
+  --border-color: #e2e7f0;
+  --border-strong: #ccd4e2;
+  --border-focus: var(--brand-500);
+
+  /* ------- 语义色 ------- */
+  --color-danger: #d9534f;
+  --color-danger-bg: #fdf1f0;
+  --color-warning: #d98324;
+  --color-warning-bg: #fdf6ec;
+  --color-success: #1e9e5a;
+  --color-success-bg: #eefaf2;
+  --color-info: #3b6fe0;
+  --color-info-bg: #f0f5fe;
+
+  /* ------- 圆角 ------- */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
+  --radius-pill: 999px;
+  /* 用户可在设置中调整 */
+  --radius-card: 12px;
+
+  /* ------- 间距 ------- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  /* ------- 字号 ------- */
+  --font-xs: 11px;
+  --font-sm: 12px;
+  --font-md: 13px;
+  --font-base: 14px;
+  --font-lg: 16px;
+  --font-xl: 18px;
+  --font-2xl: 22px;
+
+  /* ------- 阴影 ------- */
+  --shadow-xs: 0 1px 2px rgba(23, 34, 59, 0.05);
+  --shadow-sm: 0 2px 6px rgba(23, 34, 59, 0.07);
+  --shadow-md: 0 6px 18px rgba(23, 34, 59, 0.1);
+  --shadow-lg: 0 16px 40px rgba(23, 34, 59, 0.18);
+
+  /* ------- 布局 ------- */
+  --sidebar-width: 232px;
+  --content-max-width: 1400px;
+  --card-min-width: 168px;
+  --card-height: 60px;
+  --transition-fast: 120ms ease;
+}
+
+/* ------------------------------------------------------------------ *
+ * 深色模式
+ * ------------------------------------------------------------------ */
+
+[data-theme='dark'] {
+  color-scheme: dark;
+
+  --brand-50: #1b2434;
+  --brand-100: #202b3d;
+  --brand-200: #2a3850;
+  --brand-300: #3d5578;
+  --brand-400: #5b86d6;
+  --brand-500: #6f9bf0;
+  --brand-600: #8bb0f5;
+  --brand-700: #a8c4f8;
+  --brand-800: #c5d8fb;
+
+  --bg-page: #161a22;
+  --bg-page-image: none;
+  --bg-app-bar: rgba(28, 33, 43, 0.9);
+  --bg-panel: #1e232d;
+  --bg-panel-translucent: rgba(30, 35, 45, 0.88);
+  --bg-subtle: #232936;
+  --bg-hover: #2a3242;
+  --bg-active: #2f3a4e;
+  --bg-input: #232936;
+  --bg-overlay: rgba(6, 9, 14, 0.62);
+
+  --text-primary: #e8ecf3;
+  --text-secondary: #a8b2c2;
+  --text-tertiary: #7b8698;
+  --text-inverse: #12161d;
+  --text-on-brand: #0f1319;
+
+  --border-color: #2c3441;
+  --border-strong: #3a4555;
+
+  --color-danger: #ef7b76;
+  --color-danger-bg: #3a2422;
+  --color-warning: #e0a45c;
+  --color-warning-bg: #362a1c;
+  --color-success: #56c98a;
+  --color-success-bg: #1d3227;
+  --color-info: #7ba4f0;
+  --color-info-bg: #1f2a3d;
+
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-sm: 0 2px 6px rgba(0, 0, 0, 0.35);
+  --shadow-md: 0 6px 18px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.55);
+}
+
+/* ------------------------------------------------------------------ *
+ * 卡片密度（由设置面板切换 data-density）
+ * ------------------------------------------------------------------ */
+
+[data-density='compact'] {
+  --card-height: 50px;
+  --card-min-width: 152px;
+}
+
+[data-density='comfortable'] {
+  --card-height: 60px;
+  --card-min-width: 168px;
+}
+
+[data-density='loose'] {
+  --card-height: 74px;
+  --card-min-width: 200px;
+}
+
+/* ------------------------------------------------------------------ *
+ * 降低动态效果（尊重系统偏好与用户设置）
+ * ------------------------------------------------------------------ */
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --transition-fast: 0ms;
+  }
+}
+
+[data-motion='reduced'] * {
+  animation-duration: 0.001ms !important;
+  transition-duration: 0.001ms !important;
+}

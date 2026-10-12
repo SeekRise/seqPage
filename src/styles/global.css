@@ -1,0 +1,48 @@
+/**
+ * 全局（非 scoped）辅助样式
+ *
+ * 只有需要作用到第三方 DOM（如 SortableJS 注入的拖拽占位元素）
+ * 或必须全局生效的规则才放在这里，业务样式一律写在组件内。
+ */
+
+/* SortableJS 拖拽相关类 */
+.sortable-ghost {
+  opacity: 0.4;
+  background: var(--bg-active);
+}
+
+.sortable-chosen {
+  cursor: grabbing;
+}
+
+.sortable-drag {
+  opacity: 0.95;
+  cursor: grabbing;
+}
+
+/* 拖拽过程中禁止卡片内部元素捕获鼠标事件，避免拖拽结束误触打开网站 */
+body.is-dragging,
+body.is-dragging * {
+  cursor: grabbing !important;
+}
+
+body.is-dragging .website-card,
+body.is-dragging .sidebar-item {
+  pointer-events: none;
+}
+
+/* 页面切换过渡（克制、无装饰性动画） */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity var(--transition-fast);
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
+/* 弹窗打开时禁止背景滚动 */
+body.modal-open {
+  overflow: hidden;
+}

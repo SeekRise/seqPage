@@ -1,0 +1,35 @@
+{
+  "name": "my-navi",
+  "version": "1.0.0",
+  "private": true,
+  "description": "My Navi - Chrome 新标签页个人导航工作台（Manifest V3 + Vue 3 + TypeScript + Vite）",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc --noEmit -p tsconfig.app.json && vite build",
+    "build:only": "vite build",
+    "type-check": "vue-tsc --noEmit -p tsconfig.app.json",
+    "verify": "node tools/verify-dist.mjs",
+    "smoke": "node tools/smoke-test.mjs",
+    "legacy": "node tools/legacy-format-test.mjs",
+    "corrupt": "node tools/corrupt-data-test.mjs",
+    "shot": "node tools/screenshot.mjs",
+    "measure": "node tools/measure.mjs",
+    "check": "npm run type-check && npm run build:only && npm run verify && npm run legacy && npm run corrupt && npm run smoke",
+    "icons": "node tools/generate-icons.mjs",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "sortablejs": "^1.15.7",
+    "vue": "^3.5.43"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.3.5",
+    "@types/node": "^24.10.1",
+    "@types/sortablejs": "^1.15.9",
+    "@vitejs/plugin-vue": "^6.0.10",
+    "typescript": "~5.9.3",
+    "vite": "^7.1.12",
+    "vue-tsc": "^3.3.12"
+  }
+}
