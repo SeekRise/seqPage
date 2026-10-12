@@ -283,9 +283,9 @@ check('设置入口可点击', themeControls.opened === true);
 await new Promise((r) => setTimeout(r, 400));
 
 const settingsPanel = await evaluate(`(() => {
-  const modal = document.querySelector('dialog[open]');
-  const radios = modal ? [...modal.querySelectorAll('[role="radio"]')].map((el) => el.textContent.trim()) : [];
-  const tabs = modal ? [...modal.querySelectorAll('.settings__tab')].map((el) => el.textContent.trim()) : [];
+  const modal = document.querySelector('[data-testid="settings-modal"]');
+  const radios = modal ? [...modal.querySelectorAll('[data-testid^="setting-theme-"]')].map((el) => el.textContent.trim()) : [];
+  const tabs = modal ? [...modal.querySelectorAll('.n-tabs-tab')].map((el) => el.textContent.trim()) : [];
   return { hasModal: !!modal, radios, tabs };
 })()`);
 check('设置面板可打开', settingsPanel.hasModal);
@@ -296,8 +296,8 @@ check('包含四个设置分组', settingsPanel.tabs, (v) => v.length === 4);
 
 // 关闭设置面板
 await evaluate(`(() => {
-  const modal = document.querySelector('dialog[open]');
-  const closeBtn = modal?.querySelector('.modal__header button');
+  const modal = document.querySelector('[data-testid="settings-modal"]');
+  const closeBtn = modal?.querySelector('[data-testid="settings-done"]');
   closeBtn?.click();
   return true;
 })()`);
@@ -372,13 +372,12 @@ const mutate = await evaluate(`(async () => {
   const buttons = [...document.querySelectorAll('button')];
   buttons.find((el) => el.textContent.trim() === '设置')?.click();
   await new Promise((r) => setTimeout(r, 400));
-  const modal = document.querySelector('dialog[open]');
-  const radios = [...(modal?.querySelectorAll('[role=radio]') ?? [])];
-  const darkRadio = radios.find((el) => el.textContent.includes('深色'));
+  const modal = document.querySelector('[data-testid="settings-modal"]');
+  const darkRadio = modal?.querySelector('[data-testid="setting-theme-dark"]');
   darkRadio?.click();
   await new Promise((r) => setTimeout(r, 900));
   const theme = document.documentElement.dataset.theme;
-  document.querySelector('dialog[open] .modal__header button')?.click();
+  document.querySelector('[data-testid="settings-done"]')?.click();
   await new Promise((r) => setTimeout(r, 300));
 
   // 3) 删除一个网站并确认二次确认对话框可用（验证危险操作的确认链路 + 防抖写入落盘）
@@ -442,10 +441,10 @@ const sidebarLeft = await evaluate(`(async () => {
   const buttons = [...document.querySelectorAll('button')];
   buttons.find((el) => el.textContent.trim() === '设置')?.click();
   await new Promise((r) => setTimeout(r, 450));
-  const modal = document.querySelector('dialog[open]');
-  const positionRadios = [...(modal?.querySelectorAll('[role=radio]') ?? [])]
+  const modal = document.querySelector('[data-testid="settings-modal"]');
+  const positionRadios = [...(modal?.querySelectorAll('[data-testid^="setting-sidebar-"]') ?? [])]
     .filter((el) => ['左侧', '右侧'].includes(el.textContent.trim()));
-  const leftRadio = positionRadios.find((el) => el.textContent.trim() === '左侧');
+  const leftRadio = modal?.querySelector('[data-testid="setting-sidebar-left"]');
   leftRadio?.click();
   await new Promise((r) => setTimeout(r, 550));
   const app = document.querySelector('.app');
@@ -473,9 +472,8 @@ check('导航栏位置已写入存储', sidebarLeft.stored, (v) => v === 'left')
 
 // 切回右侧并关闭设置
 const sidebarBack = await evaluate(`(async () => {
-  const modal = document.querySelector('dialog[open]');
-  const rightRadio = [...(modal?.querySelectorAll('[role=radio]') ?? [])]
-    .find((el) => el.textContent.trim() === '右侧');
+  const modal = document.querySelector('[data-testid="settings-modal"]');
+  const rightRadio = modal?.querySelector('[data-testid="setting-sidebar-right"]');
   rightRadio?.click();
   await new Promise((r) => setTimeout(r, 550));
   const app = document.querySelector('.app');
@@ -485,7 +483,7 @@ const sidebarBack = await evaluate(`(async () => {
   const m = main.getBoundingClientRect();
   const side = s.x + s.width / 2 < m.x + m.width / 2 ? 'left' : 'right';
   // 关闭设置面板
-  document.querySelector('dialog[open] .modal__header button')?.click();
+  document.querySelector('[data-testid="settings-done"]')?.click();
   await new Promise((r) => setTimeout(r, 350));
   return { attr: app ? app.dataset.sidebarPosition : null, side };
 })()`);

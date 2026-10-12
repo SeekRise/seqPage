@@ -200,6 +200,8 @@ const after = await evaluate(`(async () => {
     steps.push({ label: button.textContent.trim().slice(0, 12), changed: now !== rawBefore });
     // 关闭可能弹出的弹窗，避免影响后续点击
     document.querySelectorAll('dialog[open] .modal__header button').forEach((b) => b.click());
+    // 设置面板是 Naive UI 的 n-modal（非原生 dialog），需要单独关闭
+    document.querySelector('[data-testid="settings-done"]')?.click();
     await new Promise((r) => setTimeout(r, 150));
   }
 
@@ -211,6 +213,8 @@ const after = await evaluate(`(async () => {
     const now = localStorage.getItem('mynavi:state');
     steps.push({ label: 'other:' + button.textContent.trim().slice(0, 12), changed: now !== rawBefore });
     document.querySelectorAll('dialog[open] .modal__header button').forEach((b) => b.click());
+    // sidebar__tool 中的设置入口弹出的是 n-modal
+    document.querySelector('[data-testid="settings-done"]')?.click();
     await new Promise((r) => setTimeout(r, 150));
   }
 

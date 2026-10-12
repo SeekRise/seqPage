@@ -7,6 +7,7 @@
  * 保证「一次写入 = 一次持久化 + 失败回滚」。
  */
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { NConfigProvider, zhCN } from 'naive-ui';
 import BatchActionBar from '@/components/BatchActionBar.vue';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import ContextMenu from '@/components/ContextMenu.vue';
@@ -27,6 +28,7 @@ import { closeContextMenu, openContextMenu } from '@/composables/useContextMenu'
 import { useCurrentPage } from '@/composables/useCurrentPage';
 import { useSearchHistory } from '@/composables/useSearchHistory';
 import { useSortable } from '@/composables/useSortable';
+import { useNaiveTheme } from '@/composables/useNaiveTheme';
 import { useAppearance } from '@/composables/useTheme';
 import { toast } from '@/composables/useToast';
 import {
@@ -126,6 +128,7 @@ const { readCurrentPage } = useCurrentPage();
 const { clear: clearSearchHistory } = useSearchHistory();
 
 useAppearance(settings);
+const { naiveTheme, naiveOverrides } = useNaiveTheme(settings);
 
 /* ------------------------------------------------------------------ *
  * 打开网站与记录访问
@@ -1078,11 +1081,12 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div
-    class="app"
-    :class="{ 'app--narrow': isNarrow, 'app--sidebar-left': settings.sidebarPosition === 'left' }"
-    :data-sidebar-position="settings.sidebarPosition"
-  >
+  <NConfigProvider :theme="naiveTheme" :theme-overrides="naiveOverrides" :locale="zhCN">
+    <div
+      class="app"
+      :class="{ 'app--narrow': isNarrow, 'app--sidebar-left': settings.sidebarPosition === 'left' }"
+      :data-sidebar-position="settings.sidebarPosition"
+    >
     <!--
       侧边栏放在 DOM 的第一位，通过容器上的 flex-direction: row-reverse
       把它视觉上移到右侧。这样切换左右布局时组件不会重建，
@@ -1422,6 +1426,7 @@ onBeforeUnmount(() => {
     <ConfirmDialog />
     <ToastHost />
   </div>
+  </NConfigProvider>
 </template>
 
 <style scoped>

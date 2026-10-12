@@ -143,6 +143,19 @@ await shoot(
     return true;
   })()`,
 );
+// 设置面板（Naive UI 版）：打开面板截取外观分组，检查观感
+await shoot(
+  'my-navi-settings',
+  `(async () => {
+    document.documentElement.dataset.theme = 'light';
+    document.documentElement.style.removeProperty('--bg-page');
+    const buttons = [...document.querySelectorAll('button')];
+    buttons.find((el) => el.textContent.trim() === '设置')?.click();
+    await new Promise((r) => setTimeout(r, 600));
+    return true;
+  })()`,
+);
+
 // 通过设置面板把导航栏切到左侧，验证左右布局都能正常渲染
 await shoot(
   'my-navi-sidebar-left',
@@ -152,13 +165,12 @@ await shoot(
     const buttons = [...document.querySelectorAll('button')];
     buttons.find((el) => el.textContent.trim() === '设置')?.click();
     await new Promise((r) => setTimeout(r, 450));
-    const modal = document.querySelector('dialog[open]');
-    const leftRadio = [...(modal?.querySelectorAll('[role=radio]') ?? [])]
-      .find((el) => el.textContent.trim() === '左侧');
+    const modal = document.querySelector('[data-testid="settings-modal"]');
+    const leftRadio = modal?.querySelector('[data-testid="setting-sidebar-left"]');
     leftRadio?.click();
     await new Promise((r) => setTimeout(r, 500));
-    document.querySelector('dialog[open] .modal__header button')?.click();
-    await new Promise((r) => setTimeout(r, 400));
+    document.querySelector('[data-testid="settings-done"]')?.click();
+    await new Promise((r) => setTimeout(r, 600));
     return true;
   })()`,
 );
